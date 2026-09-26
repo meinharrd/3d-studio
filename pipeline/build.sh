@@ -11,9 +11,10 @@ blender -b --factory-startup -P "$PIPE/runner.py" -- "$SRC/models/$name.py" "$OU
   || { tail -30 "$SRC/last_build.log"; exit 1; }
 grep -E "^(Error|Traceback)" "$SRC/last_build.log" && { tail -30 "$SRC/last_build.log"; exit 1; }
 python3 - "$OUT" "$name" "$title" "$desc" <<'PY'
-import json, sys, os, time
+import json, sys, os, time, fcntl
 out, name, title, desc = sys.argv[1:]
 mf = os.path.join(out, "models.json")
+lock = open(mf + ".lock", "w"); fcntl.flock(lock, fcntl.LOCK_EX)  # shared with the app's edit endpoint
 items = json.load(open(mf)) if os.path.exists(mf) else []
 old = next((i for i in items if i["name"] == name), {})
 title = title or old.get("title") or name
@@ -22,7 +23,8 @@ items = [i for i in items if i["name"] != name]
 items.insert(0, {"name": name, "title": title, "description": desc,
                  "glb": f"models/{name}.glb", "thumb": f"models/{name}.png",
                  "updated": int(time.time())})
-json.dump(items, open(mf, "w"), indent=1)
+json.dump(items, open(mf + ".tmp", "w"), indent=1)
+os.replace(mf + ".tmp", mf)
 PY
 chmod o+r "$OUT"/*
 if grep -q "^Z-FIGHTING" "$SRC/last_build.log"; then

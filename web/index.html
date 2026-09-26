@@ -97,10 +97,22 @@ a{color:var(--acc)}
 #modes svg{width:15px;height:15px}
 #lightNote{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:#1f1e1dcc;border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-size:13px;color:var(--mute);white-space:nowrap}
 @media (max-width:520px){#modes button span{display:none}}
-.vbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
-.vbar .ti{flex:1;min-width:0} .vbar h2{margin:0;font:500 15px var(--sans)} .vbar p{margin:0;color:var(--mute);font-size:13px}
+.float{background:#1f1e1dcc;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
+#menuBtn{position:absolute;top:12px;right:12px;z-index:2;width:38px;height:38px}
+#menu{position:absolute;top:56px;right:12px;z-index:3;min-width:190px;padding:5px;box-shadow:0 8px 30px #0006}
+#menu button,#menu a{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:8px;color:var(--fg);text-decoration:none;font-size:14px}
+#menu button:hover,#menu a:hover{background:#ffffff12} #menu svg{width:16px;height:16px;color:var(--mute)}
+#info{position:absolute;top:56px;right:12px;z-index:3;width:min(340px,calc(100% - 24px));padding:16px 16px 14px;box-shadow:0 8px 30px #0006}
+#info h2{margin:0 26px 6px 0;font:400 20px/1.3 var(--serif)} #info p{margin:0;color:#d6d3ca;font-size:14px;white-space:pre-wrap}
+#info .x{position:absolute;top:10px;right:10px;width:28px;height:28px}
+#info .acts{display:flex;gap:8px;margin-top:12px;align-items:center} #info .acts .sp{flex:1}
+#info .meta2{color:var(--dim);font-size:12px;margin-top:10px}
+#info input,#info textarea{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;outline:0}
+#info input{font:400 17px var(--serif);margin-bottom:8px} #info textarea{min-height:110px;resize:vertical;font-size:14px}
+#info input:focus,#info textarea:focus{border-color:#6a6862}
+.btn.sm{padding:6px 12px;font-size:13px} .btn2.sm{padding:6px 8px;font-size:13px}
 #vEmpty{flex:1;display:none;place-items:center;color:var(--dim);text-align:center;padding:24px}
-#view.none #stage,#view.none .vbar{display:none} #view.none #vEmpty{display:grid}
+#view.none #stage{display:none} #view.none #vEmpty{display:grid}
 body.public #chat,body.public #handle{display:none} body.public #view{flex:1;width:auto}
 body.public #openSbV{display:grid}
 #openSbV{display:none;position:absolute;margin:10px}
@@ -153,10 +165,14 @@ dialog input:focus{border-color:#6a6862}
     <button data-mode="lights" title="Lights (4)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span>Lights</span></button>
    </div>
    <div id="lightNote" hidden>This model has no lights of its own.</div>
+   <button class="ico float" id="menuBtn" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+   <div id="menu" class="float" hidden>
+    <button id="infoBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>Info</button>
+    <a id="dl" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>Download .glb</a>
+   </div>
+   <div id="info" class="float" hidden></div>
   </div>
   <div id="vEmpty">Your model will appear here.</div>
-  <div class="vbar"><div class="ti"><h2 id="vt"></h2><p id="vd"></p></div>
-   <a class="ico" id="dl" download title="Download .glb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg></a></div>
  </section>
 </div>
 
@@ -227,10 +243,42 @@ function showModel(name){
   if(!m){viewKey=''; window.V?.clear(); return;}
   const k=m.name+':'+m.updated; if(k===viewKey) return; viewKey=k;
   const go=()=>window.V.load(m.glb+'?v='+m.updated,m.thumb+'?v='+m.updated); window.V?go():(window.__pendingModel=go);
-  $('vt').textContent=m.title; $('vd').textContent=m.description||''; $('dl').href=m.glb;
+  $('dl').href=m.glb; $('dl').download=m.name+'.glb'; if(!$('info').hidden) renderInfo();
   document.title=m.title+' · 3D Studio';
 }
 function currentModel(){ const h=decodeURIComponent(location.hash.slice(1)); return h.startsWith('c/')?null:h; }
+
+/* ---------- viewer menu / info ---------- */
+function shownModel(){ return modelBy(viewKey.split(':')[0]); }
+$('menuBtn').onclick=e=>{ e.stopPropagation(); $('info').hidden=true; $('menu').hidden=!$('menu').hidden; };
+$('infoBtn').onclick=()=>{ $('menu').hidden=true; renderInfo(); $('info').hidden=false; };
+$('dl').addEventListener('click',()=>{ $('menu').hidden=true; });
+document.addEventListener('click',e=>{ if(!e.target.closest('#menu,#menuBtn')) $('menu').hidden=true; });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('menu').hidden=true; if(!$('info').querySelector('textarea')) $('info').hidden=true; } });
+function renderInfo(edit=false){
+  const m=shownModel(), el=$('info'); if(!m){ el.hidden=true; return; }
+  const when=m.updated?new Date(m.updated*1000).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'';
+  if(edit){
+    el.innerHTML=`<input id="eT" maxlength="120"><textarea id="eD" maxlength="2000" placeholder="Description"></textarea>
+      <div class="acts"><span class="err" id="eErr"></span><span class="sp"></span><button class="btn2 sm" id="eCancel">Cancel</button><button class="btn sm" id="eSave">Save</button></div>`;
+    $('eT').value=m.title; $('eD').value=m.description||''; $('eD').focus();
+    $('eCancel').onclick=()=>renderInfo();
+    $('eSave').onclick=async()=>{
+      try{ const r=await api('models/'+encodeURIComponent(m.name),{method:'PATCH',body:JSON.stringify({title:$('eT').value,description:$('eD').value})});
+           Object.assign(m,r); renderInfo(); renderList(); if(cur?.model===m.name) $('chatTitle').textContent=m.title; }
+      catch(err){ $('eErr').textContent=err.message; }
+    };
+    $('eD').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)) $('eSave').click(); });
+  }else{
+    el.innerHTML=`<button class="ico x" title="Close">✕</button><h2></h2><p></p><div class="meta2"></div>`+
+      (user?`<div class="acts"><span class="sp"></span><button class="btn2 sm" id="eEdit">✎ Edit</button></div>`:'');
+    el.querySelector('h2').textContent=m.title;
+    el.querySelector('p').textContent=m.description||(user?'No description yet.':'');
+    el.querySelector('.meta2').textContent=when?'Updated '+when:'';
+    $('eEdit')?.addEventListener('click',()=>renderInfo(true));
+  }
+  el.querySelector('.x')?.addEventListener('click',()=>{ el.hidden=true; });
+}
 
 /* ---------- chat ---------- */
 function md(s){

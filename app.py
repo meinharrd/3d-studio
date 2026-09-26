@@ -264,6 +264,33 @@ async def delete_conv(cid: str, req: Request):
     return {}
 
 
+class ModelMeta(BaseModel):
+    title: str
+    description: str = ""
+
+
+@app.patch("/3d/api/models/{name}")
+async def edit_model(name: str, body: ModelMeta, req: Request):
+    require_user(req)
+    title, desc = body.title.strip(), body.description.strip()
+    if not title or len(title) > 120 or len(desc) > 2000:
+        raise HTTPException(400, "title 1-120 characters, description up to 2000")
+    import fcntl
+    mf = WEB / "models.json"
+    with open(str(mf) + ".lock", "w") as lock:  # build.sh takes the same lock
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        items = manifest()
+        m = next((i for i in items if i["name"] == name), None)
+        if not m:
+            raise HTTPException(404, "no such model")
+        m["title"], m["description"] = title, desc
+        tmp = mf.with_suffix(".tmp")
+        tmp.write_text(json.dumps(items, indent=1))
+        os.chmod(tmp, 0o644)
+        tmp.replace(mf)
+    return m
+
+
 def git_commit(msg: str):
     subprocess.run(["git", "add", "-A"], cwd=SRC, check=True)
     subprocess.run(["git", "-c", "user.name=3d-studio", "-c", "user.email=3d@hel1.econode.io",
@@ -339,8 +366,8 @@ def job_prompt(job, resumed=False) -> str:
             return f"(Model `{job['target']}`.) {job['prompt']}"
         title = f", current title {m['title']!r}, description {m.get('description', '')!r}" if m else ""
         return (f"This chat is about the existing model `{job['target']}` (script "
-                f"models/{job['target']}.py{title}). Keep the name; update title/description "
-                f"if they no longer fit.\n\nUser: {job['prompt']}")
+                f"models/{job['target']}.py{title}). Keep the name and the current title/description "
+                f"(the owner may have edited them) unless the change makes them wrong.\n\nUser: {job['prompt']}")
     taken = ", ".join(m["name"] for m in manifest()) or "none"
     if resumed:
         return f"(No model has been built in this chat yet; names taken: {taken}.) {job['prompt']}"
