@@ -46,3 +46,7 @@ Requirements: Linux, Python 3.11+, [Blender](https://www.blender.org/download/) 
 Serve `web/` at `/3d/` and proxy `/3d/api/*` to the backend — see `deploy/Caddyfile`.
 Set `STUDIO_SITE` to the public gallery URL and optionally `STUDIO_MODEL` to pick the Claude model.
 For more AI-generation quota, put a free Hugging Face token in `data/hf_token`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
