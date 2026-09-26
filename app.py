@@ -203,6 +203,13 @@ async def enqueue(c, user, prompt):
 @app.get("/3d/api/convs")
 async def list_convs(req: Request):
     require_user(req)
+    names = {m["name"] for m in manifest()}
+    stale = [cid for cid, c in convs.items()  # model deleted outside the UI (delete.sh) and no chat history
+             if c["model"] and c["model"] not in names and not any(j.get("conv") == cid for j in jobs)]
+    for cid in stale:
+        convs.pop(cid)
+    if stale:
+        save_convs()
     return sorted((conv_view(c) for c in convs.values()), key=lambda c: -c["updated"])
 
 
