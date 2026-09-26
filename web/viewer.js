@@ -1,0 +1,181 @@
+// three.js model viewer with display modes: wire, shaded (clay), textured (studio light), lights (model's own lights).
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+
+// Blender's glTF exporter writes photometric units (W * 683 lm/W); three.js lights are unitless.
+const LIGHT_SCALE = 1 / 683;
+const MODES = ['wire', 'shaded', 'textured', 'lights'];
+
+const stage = document.getElementById('stage');
+const poster = document.getElementById('poster');
+const note = document.getElementById('lightNote');
+
+const renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+stage.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.8;
+controls.addEventListener('start', () => { controls.autoRotate = false; });
+
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.bias = -0.0005;
+key.shadow.normalBias = 0.02;
+scene.add(key, key.target);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({opacity: 0.35}));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const wireMat = new THREE.MeshBasicMaterial({color: 0xd8d4ca, wireframe: true, transparent: true, opacity: 0.55});
+const clayMat = new THREE.MeshStandardMaterial({color: 0xa9a59c, roughness: 0.85, metalness: 0});
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.4, 0.95);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+let root = null, meshes = [], lights = [], emissive = false, loadId = 0;
+let mode = MODES.includes(localStorage.viewMode) ? localStorage.viewMode : 'textured';
+
+function dispose(obj) {
+  obj.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    const mats = o.userData.orig ? [].concat(o.userData.orig) : [];
+    for (const m of mats) {
+      for (const v of Object.values(m)) if (v && v.isTexture) v.dispose();
+      m.dispose();
+    }
+  });
+}
+
+function clear() {
+  loadId++;
+  if (root) { scene.remove(root); dispose(root); }
+  root = null; meshes = []; lights = [];
+  poster.hidden = true; note.hidden = true;
+}
+
+function frame() {
+  const box = new THREE.Box3();
+  for (const m of meshes) box.expandByObject(m);
+  if (box.isEmpty()) box.setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(1, 1, 1));
+  const center = box.getCenter(new THREE.Vector3());
+  const r = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.01);
+  const dir = new THREE.Vector3(1, 0.55, 1.25).normalize();
+  camera.position.copy(center).addScaledVector(dir, r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.05);
+  camera.near = r / 100; camera.far = r * 100; camera.updateProjectionMatrix();
+  controls.target.copy(center);
+  controls.minDistance = r * 0.3; controls.maxDistance = r * 10;
+  controls.autoRotate = true;
+  controls.update();
+  key.position.copy(center).add(new THREE.Vector3(r * 1.5, r * 3, r * 1.2));
+  key.target.position.copy(center);
+  const sc = key.shadow.camera;
+  sc.left = sc.bottom = -r * 1.6; sc.right = sc.top = r * 1.6; sc.near = 0.01; sc.far = r * 10;
+  sc.updateProjectionMatrix();
+  ground.position.set(center.x, box.min.y, center.z);
+  ground.scale.setScalar(r * 8);
+}
+
+function applyMode() {
+  const lit = mode === 'lights';
+  for (const m of meshes) m.material = mode === 'wire' ? wireMat : mode === 'shaded' ? clayMat : m.userData.orig;
+  for (const l of lights) l.visible = lit;
+  scene.environment = mode === 'wire' ? null : envTex;
+  const none = lit && !lights.length && !emissive;
+  scene.environmentIntensity = lit ? (none ? 0.25 : 0.03) : mode === 'shaded' ? 0.45 : 0.6;
+  key.visible = mode === 'shaded' || mode === 'textured';
+  key.intensity = mode === 'shaded' ? 1.5 : 1.3;
+  ground.visible = mode !== 'wire';
+  ground.material.opacity = lit ? 0.6 : 0.35;
+  scene.background = lit ? new THREE.Color(0x0c0b0a) : null;
+  stage.dataset.mode = mode;
+  note.hidden = !(root && none);
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+}
+
+function setMode(m) {
+  if (!MODES.includes(m)) return;
+  mode = m; localStorage.viewMode = m; applyMode();
+}
+
+function load(url, posterUrl) {
+  const id = ++loadId;
+  if (posterUrl) { poster.src = posterUrl; poster.hidden = false; }
+  new GLTFLoader().load(url, gltf => {
+    if (id !== loadId) return dispose(gltf.scene);
+    if (root) { scene.remove(root); dispose(root); }
+    root = gltf.scene; meshes = []; lights = []; emissive = false;
+    let shadowCasters = 0;
+    root.traverse(o => {
+      if (o.isMesh) {
+        o.castShadow = o.receiveShadow = true;
+        o.userData.orig = o.material;
+        for (const m of [].concat(o.material))
+          if (m.emissive && m.emissive.getHex() && (m.emissiveIntensity ?? 1) > 0) emissive = true;
+        meshes.push(o);
+      } else if (o.isLight) {
+        o.intensity *= o.isDirectionalLight ? 1 : LIGHT_SCALE;
+        if (!o.isPointLight || shadowCasters === 0) {  // point shadows cost 6 passes; allow at most one
+          if (shadowCasters < 3) {
+            o.castShadow = true; shadowCasters++;
+            o.shadow.mapSize.set(1024, 1024); o.shadow.bias = -0.001; o.shadow.normalBias = 0.02;
+          }
+        }
+        lights.push(o);
+      }
+    });
+    scene.add(root);
+    frame(); applyMode();
+    poster.hidden = true;
+  }, undefined, err => { if (id === loadId) { console.error(err); poster.hidden = true; } });
+}
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloom.resolution.set(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+renderer.setAnimationLoop(() => {
+  if (!root) return;
+  controls.update();
+  if (mode === 'lights') composer.render(); else renderer.render(scene, camera);
+});
+
+document.getElementById('modes').addEventListener('click', e => {
+  const b = e.target.closest('button[data-mode]');
+  if (b) setMode(b.dataset.mode);
+});
+addEventListener('keydown', e => {
+  if (e.target.closest('textarea,input')) return;
+  const i = '1234'.indexOf(e.key);
+  if (i >= 0) setMode(MODES[i]);
+});
+
+resize(); applyMode();
+window.V = {load, clear, setMode};
+if (window.__pendingModel) { window.__pendingModel(); window.__pendingModel = null; }

@@ -1,0 +1,14 @@
+[Unit]
+Description=3D Studio prompt backend
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/www/3d-studio
+Environment=HOME=/home/ubuntu
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/www/3d-studio/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8310 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

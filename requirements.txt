@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+claude-agent-sdk
+gradio_client

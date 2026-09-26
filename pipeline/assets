@@ -1,0 +1,5 @@
+#!/bin/bash
+# Asset CLI wrapper (see tools.py). Uses the app venv for gradio_client.
+REPO=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+[ -f "$REPO/data/hf_token" ] && export HF_TOKEN=$(cat "$REPO/data/hf_token")
+exec "$REPO/.venv/bin/python" "$REPO/pipeline/tools.py" "$@"

@@ -1,0 +1,11 @@
+# Example: gallery at https://example.com/3d/ (web/ symlinked or copied to <root>/3d)
+example.com {
+	encode gzip
+	handle /3d/api/* {
+		reverse_proxy 127.0.0.1:8310
+	}
+	handle {
+		root * /srv/www/example.com
+		file_server
+	}
+}

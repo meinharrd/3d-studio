@@ -1,4 +1,4 @@
-"""3D studio backend for hel1.econode.io/3d/.
+"""3D studio backend (serves /3d/api/*; the static gallery in web/ is served by the web server).
 
 Public: the static gallery (served by Caddy). Logged in: submit prompts that
 create or change models. Each prompt runs a Claude agent in 3d-src/ that may
@@ -24,8 +24,9 @@ from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ClaudeSDKCli
                               TextBlock, ThinkingBlock, ToolUseBlock)
 
 HERE = Path(__file__).resolve().parent
-SRC = Path("/home/ubuntu/www/3d-src")
-WEB = Path("/home/ubuntu/www/hel1.econode.io/3d/models")
+SRC = HERE / "content"      # model scripts + asset library (its own git repo)
+WEB = HERE / "web" / "models"  # published GLBs, thumbnails, models.json
+SITE = os.environ.get("STUDIO_SITE", "https://hel1.econode.io/3d/")
 DATA = HERE / "data"
 DATA.mkdir(exist_ok=True)
 USERS = DATA / "users.json"        # {"name": {"salt": hex, "hash": hex}}
@@ -273,7 +274,7 @@ def git_commit(msg: str):
 
 SYSTEM = f"""You chat with the owner of a 3D gallery and create/modify models for it.
 The user may also just ask questions — answer briefly; only build when asked for a change.
-You create and modify 3D models for a public gallery at https://hel1.econode.io/3d/.
+You create and modify 3D models for a public gallery at {SITE}.
 You work in {SRC}. Each model is a Blender 5.2 Python script at models/<name>.py
 (name: lowercase a-z, 0-9, dashes). The script only builds the model with bpy: the scene is
 already empty; do NOT add cameras or export code, and don't call read_factory_settings.
@@ -286,7 +287,7 @@ studio/fill lights — the other view modes provide studio lighting.
 Don't use `Material.use_nodes` (deprecated; new materials already have "Principled BSDF").
 Keep a sensible real-world scale in metres, resting on z=0. Use Principled BSDF materials.
 
-Helpers — `import studio` in the model script (read studio.py for details):
+Helpers — `import studio` in the model script (read ../pipeline/studio.py for details):
 - studio.material(name, rgb, roughness, metallic)
 - studio.pbr_material(texture_id, res="1k", scale=1.0)  realistic Poly Haven PBR textures
   (wood, metal, stone, fabric, brick, ground...). Needs UVs; use studio.box_uv(obj) on custom meshes.
