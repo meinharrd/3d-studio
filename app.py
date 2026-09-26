@@ -311,6 +311,16 @@ Poly Haven textures to make surfaces realistic; AI generation for organic subjec
 (animals, characters, food, sculptures) that are hard to build from primitives.
 Mix freely (e.g. a generated statue on a procedural plinth with a marble texture).
 
+Z-FIGHTING — check it on every build, it is part of the design process: build.sh detects
+overlapping coplanar faces. "Z-FIGHTING:" lines (exit code 3) are visible flicker and MUST be fixed
+before you finish — separate the surfaces by a real gap (>= 0.5% of the model size, e.g. 1-2 cm on
+a 3 m model), inset decals/bands/trim so they stand proud of the surface, sink parts into the
+surface they rest on instead of placing them flush, and never stack two ground/floor planes at
+the same height. Joined meshes can overlap themselves (duplicate faces): don't place boxes so their
+faces coincide; merge or offset them. "contact:" lines (a face resting flush on another, facing
+the opposite way) are usually hidden and informational. Mention in your final message that the
+z-fighting check passed.
+
 Build with:  ./build.sh <name> "<Title>" "<one-sentence description>"
 That exports the GLB, renders a thumbnail to {WEB}/<name>.png and publishes it.
 On failure it prints the Blender error; fix the script and rebuild.

@@ -10,6 +10,9 @@ script, out_dir, name = argv
 bpy.ops.wm.read_factory_settings(use_empty=True)
 runpy.run_path(script, run_name="__main__")
 
+import zcheck  # noqa: E402 — report coplanar overlaps before export (build.sh surfaces them)
+zcheck.report()
+
 bpy.ops.export_scene.gltf(filepath=os.path.join(out_dir, name + ".glb"),
                           export_format="GLB", export_apply=True,
                           export_cameras=False, export_lights=True,

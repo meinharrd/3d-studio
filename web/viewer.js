@@ -29,6 +29,7 @@ const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI / 2 - 0.03;  // stay above ground: undersides are never meant to be seen
 controls.autoRotate = true;
 controls.autoRotateSpeed = 0.8;
 controls.addEventListener('start', () => { controls.autoRotate = false; });
@@ -39,7 +40,7 @@ key.shadow.mapSize.set(2048, 2048);
 key.shadow.bias = -0.0005;
 key.shadow.normalBias = 0.02;
 scene.add(key, key.target);
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({opacity: 0.35}));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({opacity: 0.35, depthWrite: false, polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 4}));
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
@@ -82,7 +83,7 @@ function frame() {
   const r = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.01);
   const dir = new THREE.Vector3(1, 0.55, 1.25).normalize();
   camera.position.copy(center).addScaledVector(dir, r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.05);
-  camera.near = r / 100; camera.far = r * 100; camera.updateProjectionMatrix();
+  camera.near = r / 20; camera.far = r * 40;  // tight range = more depth precision camera.updateProjectionMatrix();
   controls.target.copy(center);
   controls.minDistance = r * 0.3; controls.maxDistance = r * 10;
   controls.autoRotate = true;
@@ -92,7 +93,7 @@ function frame() {
   const sc = key.shadow.camera;
   sc.left = sc.bottom = -r * 1.6; sc.right = sc.top = r * 1.6; sc.near = 0.01; sc.far = r * 10;
   sc.updateProjectionMatrix();
-  ground.position.set(center.x, box.min.y, center.z);
+  ground.position.set(center.x, box.min.y - r * 0.004, center.z);  // below the model's own floor: no z-fight
   ground.scale.setScalar(r * 8);
 }
 
