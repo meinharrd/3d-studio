@@ -83,7 +83,8 @@ function frame() {
   const r = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.01);
   const dir = new THREE.Vector3(1, 0.55, 1.25).normalize();
   camera.position.copy(center).addScaledVector(dir, r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.05);
-  camera.near = r / 20; camera.far = r * 40;  // tight range = more depth precision camera.updateProjectionMatrix();
+  camera.near = r / 20; camera.far = r * 40;  // tight range = more depth precision
+  camera.updateProjectionMatrix();
   controls.target.copy(center);
   controls.minDistance = r * 0.3; controls.maxDistance = r * 10;
   controls.autoRotate = true;
@@ -188,5 +189,5 @@ addEventListener('keydown', e => {
 });
 
 resize(); applyMode();
-window.V = {load, clear, setMode};
+window.V = {load, clear, setMode, camera};
 if (window.__pendingModel) { window.__pendingModel(); window.__pendingModel = null; }
