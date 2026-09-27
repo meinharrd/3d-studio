@@ -72,7 +72,7 @@ function clear() {
   loadId++;
   if (root) { scene.remove(root); dispose(root); }
   root = null; meshes = []; lights = [];
-  poster.hidden = true; note.hidden = true;
+  showLoading(false); note.hidden = true;
 }
 
 function frame() {
@@ -110,6 +110,7 @@ function applyMode() {
   ground.material.opacity = lit ? 0.6 : 0.35;
   scene.background = lit ? new THREE.Color(0x0c0b0a) : null;
   stage.dataset.mode = mode;
+  if (mode !== 'textured') poster.hidden = true;
   note.hidden = !(root && none);
   document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
 }
@@ -119,9 +120,18 @@ function setMode(m) {
   mode = m; localStorage.viewMode = m; applyMode();
 }
 
+function showLoading(on, posterUrl) {
+  // the thumbnail is a textured render, so only use it as a placeholder in textured mode
+  if (on && posterUrl && mode === 'textured') { poster.src = posterUrl; poster.hidden = false; }
+  else poster.hidden = true;
+  stage.classList.toggle('loading', on);
+}
+
 function load(url, posterUrl) {
   const id = ++loadId;
-  if (posterUrl) { poster.src = posterUrl; poster.hidden = false; }
+  if (root) { scene.remove(root); dispose(root); root = null; meshes = []; lights = []; }  // never show the previous model under the new placeholder
+  note.hidden = true;
+  showLoading(true, posterUrl);
   new GLTFLoader().load(url, gltf => {
     if (id !== loadId) return dispose(gltf.scene);
     if (root) { scene.remove(root); dispose(root); }
@@ -147,8 +157,8 @@ function load(url, posterUrl) {
     });
     scene.add(root);
     frame(); applyMode();
-    poster.hidden = true;
-  }, undefined, err => { if (id === loadId) { console.error(err); poster.hidden = true; } });
+    showLoading(false);
+  }, undefined, err => { if (id === loadId) { console.error(err); showLoading(false); } });
 }
 
 function resize() {
@@ -162,7 +172,7 @@ function resize() {
 new ResizeObserver(resize).observe(stage);
 
 renderer.setAnimationLoop(() => {
-  if (!root) return;
+  if (!root) { renderer.clear(); return; }
   controls.update();
   if (mode === 'lights') composer.render(); else renderer.render(scene, camera);
 });
