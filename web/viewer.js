@@ -56,6 +56,13 @@ composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
 let root = null, meshes = [], lights = [], emissive = false, loadId = 0;
+// animation: glTF clips play on a loop; brightness flicker is by naming convention ("flicker" in a
+// light's or material's name), since three.js can't load animated light/emission values from glTF
+let mixer = null, flickerLights = [], flickerMats = [], paused = false;
+const clock = new THREE.Clock();
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const FLICKER = /flicker/i;
+function flicker(t, seed) { return 0.8 + 0.12 * Math.sin(t * 13 + seed) + 0.08 * Math.sin(t * 29.7 + seed * 2); }
 let mode = MODES.includes(localStorage.viewMode) ? localStorage.viewMode : 'textured';
 
 function dispose(obj) {
@@ -69,8 +76,14 @@ function dispose(obj) {
   });
 }
 
+function stopAnimation() {
+  if (mixer) { mixer.stopAllAction(); if (root) mixer.uncacheRoot(root); mixer = null; }
+  flickerLights = []; flickerMats = [];
+}
+
 function clear() {
   loadId++;
+  stopAnimation();
   if (root) { scene.remove(root); dispose(root); }
   root = null; meshes = []; lights = [];
   showLoading(false); note.hidden = true;
@@ -131,20 +144,28 @@ function showLoading(on, posterUrl) {
 
 function load(url, posterUrl) {
   const id = ++loadId;
+  stopAnimation();
   if (root) { scene.remove(root); dispose(root); root = null; meshes = []; lights = []; }  // never show the previous model under the new placeholder
   note.hidden = true;
   showLoading(true, posterUrl);
   new GLTFLoader().load(url, gltf => {
     if (id !== loadId) return dispose(gltf.scene);
+    stopAnimation();
     if (root) { scene.remove(root); dispose(root); }
     root = gltf.scene; meshes = []; lights = []; emissive = false;
+    const seen = new Set();
     let shadowBudget = 16;
     root.traverse(o => {
       if (o.isMesh) {
         o.castShadow = o.receiveShadow = true;
         o.userData.orig = o.material;
         for (const m of [].concat(o.material))
-          if (m.emissive && m.emissive.getHex() && (m.emissiveIntensity ?? 1) > 0) emissive = true;
+          if (m.emissive && m.emissive.getHex() && (m.emissiveIntensity ?? 1) > 0) {
+            emissive = true;
+            if (FLICKER.test(m.name) && !seen.has(m)) {
+              seen.add(m); flickerMats.push({m, base: m.emissiveIntensity, seed: Math.random() * 100});
+            }
+          }
         meshes.push(o);
       } else if (o.isLight) {
         o.intensity *= LIGHT_SCALE;
@@ -156,10 +177,19 @@ function load(url, posterUrl) {
           o.shadow.mapSize.set(o.isPointLight ? 512 : 1024, o.isPointLight ? 512 : 1024);
           o.shadow.bias = -0.001; o.shadow.normalBias = 0.02;
         }
+        // the exporter names the light after Blender's light data and its parent node after the object
+        if (FLICKER.test(o.name) || FLICKER.test(o.parent?.name || ''))
+          flickerLights.push({l: o, base: o.intensity, seed: Math.random() * 100});  // base already in three.js units
         lights.push(o);
       }
     });
     scene.add(root);
+    if (gltf.animations.length) {
+      mixer = new THREE.AnimationMixer(root);
+      for (const clip of gltf.animations) mixer.clipAction(clip).play();  // LoopRepeat by default
+    }
+    clock.getDelta();  // don't jump on the first frame
+    syncAnimUi();
     frame(); applyMode();
     showLoading(false);
   }, undefined, err => { if (id === loadId) { console.error(err); showLoading(false); } });
@@ -175,8 +205,24 @@ function resize() {
 }
 new ResizeObserver(resize).observe(stage);
 
+function animated() { return !!(mixer || flickerLights.length || flickerMats.length); }
+function syncAnimUi() {
+  const b = document.getElementById('animBtn');
+  if (!b) return;
+  b.hidden = !animated();
+  b.querySelector('span').textContent = paused ? 'Play animation' : 'Pause animation';
+}
+function setPaused(p) { paused = p; clock.getDelta(); syncAnimUi(); }
+
 renderer.setAnimationLoop(() => {
   if (!root) { renderer.clear(); return; }
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (!paused && !reducedMotion.matches) {
+    if (mixer) mixer.update(dt);
+    const t = clock.elapsedTime;
+    for (const f of flickerLights) f.l.intensity = f.base * flicker(t, f.seed);
+    for (const f of flickerMats) f.m.emissiveIntensity = f.base * flicker(t, f.seed);
+  }
   controls.update();
   if (mode === 'lights') composer.render(); else renderer.render(scene, camera);
 });
@@ -192,5 +238,7 @@ addEventListener('keydown', e => {
 });
 
 resize(); applyMode();
-window.V = {load, clear, setMode, camera};
+document.getElementById('animBtn')?.addEventListener('click', () => setPaused(!paused));
+reducedMotion.addEventListener('change', syncAnimUi);
+window.V = {load, clear, setMode, camera, setPaused, get animated() { return animated(); }, get mixer() { return mixer; }};
 if (window.__pendingModel) { window.__pendingModel(); window.__pendingModel = null; }

@@ -6,7 +6,7 @@ is published to a public gallery with an interactive viewer.
 
 - **Chat UI** (claude.ai-style): chats per model in the sidebar, agent steps shown as collapsible
   "thinking", follow-ups continue the same agent session, stop button.
-- **Viewer** (three.js): orbit/zoom, with *Wire*, *Shaded*, *Textured* and *Lights* modes. Lights mode
+- **Viewer** (three.js): orbit/zoom, *Wire*, *Shaded*, *Textured* and *Lights* modes, looping glTF animations (plus name-based "flicker" for lights and glowing materials). Lights mode
   shows only the model's own glTF lights (`KHR_lights_punctual`) and emissive glow.
 - **Assets**: [Poly Haven](https://polyhaven.com) CC0 textures and models; optional AI mesh
   generation (text → FLUX.1-schnell image → TRELLIS mesh) through free Hugging Face Spaces.

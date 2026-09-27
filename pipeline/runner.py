@@ -9,6 +9,8 @@ script, out_dir, name = argv
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 runpy.run_path(script, run_name="__main__")
+scene = bpy.context.scene
+scene.frame_set(scene.frame_start)  # checks, bounds and thumbnail all use the first frame
 
 import zcheck  # noqa: E402 — report coplanar overlaps before export (build.sh surfaces them)
 zcheck.report()
@@ -16,6 +18,9 @@ zcheck.report()
 bpy.ops.export_scene.gltf(filepath=os.path.join(out_dir, name + ".glb"),
                           export_format="GLB", export_apply=True,
                           export_cameras=False, export_lights=True,
+                          export_animations=True, export_animation_mode="ACTIONS",
+                          export_force_sampling=True,   # bakes F-modifiers (Cycles, Noise) and drivers into keys
+                          export_frame_range=True,      # clip = scene.frame_start..frame_end
                           export_image_format="WEBP", export_image_quality=85)
 
 # Thumbnail: frame all meshes with a camera + lights (not exported)

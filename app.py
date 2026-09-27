@@ -311,6 +311,14 @@ candles, neon, engines), add real Blender lights (POINT / SPOT / SUN — AREA li
 at the source and give the glowing parts an emissive material (Emission Color + Strength 3-15).
 Typical energies: candle 1-5 W, lamp bulb 20-60 W, spot 50-200 W, sun 2-5. Don't add generic
 studio/fill lights — the other view modes provide studio lighting.
+ANIMATION — models may animate: keyframe object location/rotation/scale (or armatures). Call
+studio.animation(frames=48) to set the clip length (24 fps), then studio.loop_keys(obj, "scale",
+[v0, v1, ...], period=24, offset=5) for seamless loops (period must divide the length; vary
+periods/offsets so repeated parts don't move in sync). Name a light or material with "flicker"
+(e.g. campfire_flicker, flame_flicker_1) for automatic brightness flicker in the viewer — animated
+brightness/colour/emission values do NOT export. Checks and the thumbnail use the first frame.
+Only animate when it suits the model (fire, water, machines, flags...) or when asked.
+
 LIGHT CHECK — every build renders the model the way Lights mode shows it (only its own lights)
 into last_lights.png and prints "light:" / "lights view:" lines. "LIGHTS ..." lines (exit code 4)
 MUST be fixed: TOO BRIGHT / TOO DIM (adjust energies; point/spot fall off with distance²), or

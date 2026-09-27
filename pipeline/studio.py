@@ -1,4 +1,10 @@
-"""Helpers for model scripts (import studio). Works offline: fetch assets first with ./assets."""
+"""Helpers for model scripts (import studio). Works offline: fetch assets first with ./assets.
+
+Animation: keyframe object location / rotation / scale (or armatures); it exports as looping glTF
+clips over scene.frame_start..frame_end at scene.render.fps. Use animation() + loop_keys() for
+seamless loops. Name a light (object or light data) or a material with "flicker" to get automatic
+brightness flicker in the web viewer. Animated brightness, colour and emission values don't export,
+and export_apply=True means shape-key animation doesn't either."""
 from pathlib import Path
 
 import bpy
@@ -115,3 +121,46 @@ def generated_model(slug, size=2.0, max_faces=60000, **kw):
     """AI-generated mesh from ./assets generate <slug> ... (dimensions are arbitrary, so size is used)."""
     p = _need(ASSETS / "generated" / slug / "mesh.glb", f"./assets generate {slug} \"<prompt>\"")
     return import_glb(p, size=size, max_faces=max_faces, name=slug, **kw)
+
+
+def animation(frames=48, fps=24):
+    """Set the clip length (frames at fps). Every loop period used with loop_keys must divide it."""
+    sc = bpy.context.scene
+    sc.frame_start, sc.frame_end = 1, frames
+    sc.render.fps = fps
+    return frames
+
+
+def loop_keys(obj, path, values, period=None, offset=0, interpolation="BEZIER"):
+    """Seamlessly loop `obj.<path>` ("location", "rotation_euler", "scale" or e.g. "location.z")
+    through `values` (each a scalar or a 3-tuple) over `period` frames, starting `offset` frames in
+    (use different offsets/periods so repeated parts don't move in sync). The first value is repeated
+    at the end, and the curve repeats (Cycles modifier) — exported by sampling the scene range, so
+    `period` must divide the scene length (see animation())."""
+    sc = bpy.context.scene
+    length = sc.frame_end - sc.frame_start + 1
+    period = period or length
+    if length % period:
+        raise ValueError(f"loop period {period} doesn't divide the scene length {length}: the loop would jump")
+    prop, _, comp = path.partition(".")
+    idx = "xyz".index(comp) if comp else -1
+    vals = list(values) + [values[0]]
+    step = period / (len(vals) - 1)
+    for i, v in enumerate(vals):
+        f = sc.frame_start + offset + i * step
+        if idx >= 0:
+            getattr(obj, prop)[idx] = v
+        else:
+            setattr(obj, prop, v)
+        obj.keyframe_insert(prop, index=idx, frame=f)
+    act = obj.animation_data.action
+    curves = act.fcurves if hasattr(act, "fcurves") else [c for l in act.layers for s in l.strips
+                                                           for cb in s.channelbags for c in cb.fcurves]
+    for fc in curves:
+        if fc.data_path != prop or (idx >= 0 and fc.array_index != idx):
+            continue
+        for kp in fc.keyframe_points:
+            kp.interpolation = interpolation
+        if not any(m.type == "CYCLES" for m in fc.modifiers):
+            fc.modifiers.new("CYCLES")
+    return obj
