@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
 
-const EYE = 1.6, STEP = 0.45, RADIUS = 0.3, WALK = 1.4, RUN = 3.0, UP = 0.7;
+const EYE = 1.6, STEP = 0.45, RADIUS = 0.3, WALK = 1.4, RUN = 5.0, UP = 0.7, GRAVITY = 9.81;
 // wall rays: shin (low furniture like sofa seats), knee, chest
 const RAYS = [0.15, 0.4, 1.2];
 const LOOK = 0.0022, PITCH_MAX = THREE.MathUtils.degToRad(85), FOV = 70;
@@ -16,6 +16,7 @@ let cam, controls, dom, stage, hintEl, btnEl, exitEl, joyEl;
 let root = null, hasWalk = false, spawn = null, animated = new Set(), prepared = false;
 let solids = [];          // {o, bvh, inv, nmat, sphere, walk}
 let active = false, saved = null, yaw = 0, pitch = 0, locked = false, useLock = true;
+let collide = false, vy = 0, falling = false;  // walls are passable unless toggled on (C)
 const feet = new THREE.Vector3();
 const keys = new Set();
 const joy = {id: null, x0: 0, y0: 0, x: 0, y: 0};
@@ -63,6 +64,7 @@ export function init(ctx) {
     if (e.target.closest?.('textarea,input')) return;
     if (!active) return;
     if (e.key === 'Escape') { exit(); return; }
+    if (e.code === 'KeyC' && !e.repeat) { collide = !collide; ui(); return; }
     keys.add(e.code);
     if (/^(Arrow|Space)/.test(e.code)) e.preventDefault();
   });
@@ -144,20 +146,27 @@ function cast(origin, dir, far, filter) {
   return best;
 }
 
+// glass and other see-through surfaces don't stop a click (checks the model's own material, so it
+// works in wire/shaded mode too)
+function seeThrough(o) {
+  return [].concat(o.userData.orig || o.material).some(m => m && (m.transmission > 0 || (m.transparent && m.opacity < 0.9)
+    || /glass/i.test(m.name || '')));
+}
+
 function pick(cx, cy) {
   prepare();
   const r = dom.getBoundingClientRect();
   const ndc = new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
   const rc = new THREE.Raycaster();
   rc.setFromCamera(ndc, cam);
-  return cast(rc.ray.origin, rc.ray.direction, cam.far, null);  // first hit of anything
+  return cast(rc.ray.origin, rc.ray.direction, cam.far, (e) => !seeThrough(e.o));  // first opaque hit
 }
 
-// walkable ground under a point: upward faces of walk_ meshes, from STEP above to STEP below
-function ground(pos, from = pos.y) {
-  const o = _v2.set(pos.x, from + 0.5, pos.z);
-  const h = cast(o.clone(), new THREE.Vector3(0, -1, 0), 0.5 + STEP + 0.02, (e, n) => e.walk && n.y > UP);
-  return h && Math.abs(h.p.y - from) <= STEP + 1e-3 ? h : null;
+// walkable ground under a point: the highest upward walk_ face at most STEP above `from`
+// (depth = how far down to look; falls can be long)
+function ground(pos, from = pos.y, depth = 200) {
+  const o = _v2.set(pos.x, from + STEP, pos.z);
+  return cast(o.clone(), new THREE.Vector3(0, -1, 0), STEP + depth, (e, n) => e.walk && n.y > UP);
 }
 
 // wall hit along a horizontal move (rays at RAYS heights above the feet)
@@ -178,7 +187,7 @@ function wall(d) {
 }
 
 function tryMove(d) {
-  for (let i = 0; i < 3 && d.lengthSq() > 1e-12; i++) {
+  for (let i = 0; collide && i < 3 && d.lengthSq() > 1e-12; i++) {
     const hit = wall(d);
     if (!hit) break;
     const n = _v.set(hit.n.x, 0, hit.n.z);
@@ -191,10 +200,23 @@ function tryMove(d) {
   }
   if (d.lengthSq() < 1e-12) return false;
   const np = feet.clone().add(d);
+  if (falling) { feet.x = np.x; feet.z = np.z; return true; }   // steer while falling
   const g = ground(np, feet.y);
-  if (!g) return false;                                   // no floor there, or a drop/climb > STEP
-  feet.set(np.x, g.p.y, np.z);
+  if (!g) return false;                                   // nothing walkable below at all: the void
+  feet.set(np.x, feet.y, np.z);
+  if (g.p.y >= feet.y - STEP) feet.y = g.p.y;             // stairs / small drops: snap
+  else { falling = true; vy = 0; }                        // over a cliff: fall
   return true;
+}
+
+function fall(dt) {
+  if (!falling) return;
+  vy -= GRAVITY * dt;
+  const dy = vy * dt;                                     // negative
+  const g = ground(feet, feet.y - STEP, -dy + 0.02);     // anything to land on within this frame's drop?
+  if (g && g.p.y >= feet.y + dy - 0.01) { feet.y = g.p.y; falling = false; vy = 0; }
+  else if (feet.y + dy < -500) { falling = false; vy = 0; } // safety net
+  else feet.y += dy;
 }
 
 function turn(dx, dy) {
@@ -215,7 +237,8 @@ export function update(dt) {
   const mag = Math.hypot(f, s);
   if (mag > 1) { f /= mag; s /= mag; }
   if (mag > 0.01) {
-    const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(joy.x, joy.y) > 0.95) ? RUN : WALK;
+    const slow = keys.has('ShiftLeft') || keys.has('ShiftRight') || (joy.id !== null && Math.hypot(joy.x, joy.y) < 0.5);
+    const speed = slow ? WALK : RUN;
     const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const d = fwd.multiplyScalar(f).addScaledVector(right, s).multiplyScalar(speed * dt);
@@ -224,6 +247,7 @@ export function update(dt) {
     d.divideScalar(steps);
     for (let i = 0; i < steps; i++) tryMove(d.clone());
   }
+  for (let t = Math.min(dt, 0.1); t > 1e-6; t -= 0.02) fall(Math.min(t, 0.02));  // sub-steps: correct at any fps
   place();
   return true;
 }
@@ -238,8 +262,8 @@ function enter(point, lock = true) {
            fov: cam.fov, autoRotate: controls.autoRotate};
   const dir = cam.getWorldDirection(new THREE.Vector3());
   yaw = Math.atan2(-dir.x, -dir.z); pitch = 0;
-  feet.copy(point);
-  const g = ground(point);
+  feet.copy(point); falling = false; vy = 0;
+  const g = ground(point, point.y, STEP);
   if (g) feet.y = g.p.y;
   controls.enabled = false; controls.autoRotate = false;
   cam.fov = FOV; cam.near = 0.05; cam.far = Math.max(cam.far, 500); cam.updateProjectionMatrix();
@@ -278,9 +302,10 @@ export function exit() {
 
 export function isActive() { return active; }
 // test/debug hook: state, and aim the walker (degrees; 0 = looking along -Z)
-export function debug() { return {saved: saved && saved.pos.toArray().map(v => +v.toFixed(3)), active, feet: feet.toArray().map(v => +v.toFixed(3)), yaw: THREE.MathUtils.radToDeg(yaw), hasWalk, spawn: !!spawn, solids: solids.length}; }
+export function debug() { return {falling, collide, saved: saved && saved.pos.toArray().map(v => +v.toFixed(3)), active, feet: feet.toArray().map(v => +v.toFixed(3)), yaw: THREE.MathUtils.radToDeg(yaw), hasWalk, spawn: !!spawn, solids: solids.length}; }
 export function aim(deg, pitchDeg = 0) { yaw = THREE.MathUtils.degToRad(deg); pitch = THREE.MathUtils.degToRad(pitchDeg); if (active) place(); }
-export function teleport(x, y, z) { feet.set(x, y, z); const g = ground(feet); if (g) feet.y = g.p.y; if (active) place(); return !!g; }
+export function teleport(x, y, z) { feet.set(x, y, z); falling = false; vy = 0; const g = ground(feet, y, STEP); if (g) feet.y = g.p.y; if (active) place(); return !!g; }
+export function setCollide(on) { collide = on; ui(); }
 export function probe(x, y, z, dx, dy, dz, far = 5) {
   prepare();
   const d = new THREE.Vector3(dx, dy, dz).normalize(), o = new THREE.Vector3(x, y, z), out = [];
@@ -333,7 +358,8 @@ function ui() {
     const touch = matchMedia('(pointer: coarse)').matches;
     hintEl.hidden = !hasWalk;
     hintEl.textContent = !active ? (touch ? 'Tap a floor to walk' : 'Click a floor to walk')
-      : touch ? 'Left: move · Right: look' : 'WASD / arrows to move · Shift to run · mouse to look · Esc to exit';
+      : touch ? 'Left: move (push far to run) · Right: look'
+      : `WASD / arrows to move · Shift to walk slowly · C: walls ${collide ? 'solid' : 'passable'} · Esc to exit`;
     hintEl.classList.toggle('walking', active);
   }
   stage?.classList.toggle('walking', active);
