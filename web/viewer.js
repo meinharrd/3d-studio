@@ -7,6 +7,7 @@ import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
 import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+import * as Walk from './walk.js';
 
 // Blender's glTF exporter (lighting mode "SPEC") multiplies every light by 683 lm/W — sun included
 // (W/m² → lux) — while three.js lights use Blender-like radiometric values. Undo it for all types.
@@ -83,6 +84,7 @@ function stopAnimation() {
 
 function clear() {
   loadId++;
+  Walk.setModel(null);
   stopAnimation();
   if (root) { scene.remove(root); dispose(root); }
   root = null; meshes = []; lights = [];
@@ -127,7 +129,7 @@ function applyMode() {
   stage.dataset.mode = mode;
   if (mode !== 'textured') poster.hidden = true;
   note.hidden = !(root && none);
-  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  document.querySelectorAll('#modes button[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
 }
 
 function setMode(m) {
@@ -144,6 +146,7 @@ function showLoading(on, posterUrl) {
 
 function load(url, posterUrl) {
   const id = ++loadId;
+  Walk.setModel(null);   // leaving walk mode restores the orbit camera before we reframe
   stopAnimation();
   if (root) { scene.remove(root); dispose(root); root = null; meshes = []; lights = []; }  // never show the previous model under the new placeholder
   note.hidden = true;
@@ -190,6 +193,7 @@ function load(url, posterUrl) {
     }
     clock.getDelta();  // don't jump on the first frame
     syncAnimUi();
+    Walk.setModel(root, gltf.animations);
     frame(); applyMode();
     showLoading(false);
   }, undefined, err => { if (id === loadId) { console.error(err); showLoading(false); } });
@@ -223,7 +227,7 @@ renderer.setAnimationLoop(() => {
     for (const f of flickerLights) f.l.intensity = f.base * flicker(t, f.seed);
     for (const f of flickerMats) f.m.emissiveIntensity = f.base * flicker(t, f.seed);
   }
-  controls.update();
+  if (!Walk.update(dt)) controls.update();
   if (mode === 'lights') composer.render(); else renderer.render(scene, camera);
 });
 
@@ -237,8 +241,9 @@ addEventListener('keydown', e => {
   if (i >= 0) setMode(MODES[i]);
 });
 
+Walk.init({camera, controls, dom: renderer.domElement, stage});
 resize(); applyMode();
 document.getElementById('animBtn')?.addEventListener('click', () => setPaused(!paused));
 reducedMotion.addEventListener('change', syncAnimUi);
-window.V = {load, clear, setMode, camera, setPaused, get animated() { return animated(); }, get mixer() { return mixer; }};
+window.V = {load, clear, setMode, camera, scene, walk: Walk, setPaused, get animated() { return animated(); }, get mixer() { return mixer; }};
 if (window.__pendingModel) { window.__pendingModel(); window.__pendingModel = null; }

@@ -8,6 +8,9 @@ is published to a public gallery with an interactive viewer.
   "thinking", follow-ups continue the same agent session, stop button.
 - **Viewer** (three.js): orbit/zoom, *Wire*, *Shaded*, *Textured* and *Lights* modes, looping glTF animations (plus name-based "flicker" for lights and glowing materials). Lights mode
   shows only the model's own glTF lights (`KHR_lights_punctual`) and emissive glow.
+- **Walk mode**: models that name walkable surfaces `walk_*` (and optionally add an empty `fpv_spawn`)
+  can be explored in first person — click a floor or press *Walk*; WASD/mouse, or joystick on touch.
+  Collision uses [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh).
 - **Assets**: [Poly Haven](https://polyhaven.com) CC0 textures and models; optional AI mesh
   generation (text → FLUX.1-schnell image → TRELLIS mesh) through free Hugging Face Spaces.
 - **Public gallery, private editing**: anyone can browse; editing needs a login.

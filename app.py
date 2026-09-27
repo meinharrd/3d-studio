@@ -319,6 +319,12 @@ periods/offsets so repeated parts don't move in sync). Name a light or material 
 brightness/colour/emission values do NOT export. Checks and the thumbnail use the first frame.
 Only animate when it suits the model (fire, water, machines, flags...) or when asked.
 
+WALK MODE — visitors can walk through a model in first person. Opt in for buildings, rooms,
+landscapes and anything worth walking around: name every walkable object walk_<something>
+(floors, stairs, paths, decks, rugs, roofs — only its upward faces count, max step 0.45 m, keep
+stair risers <= 0.23 m, doorways >= 0.85 m wide and 2.1 m high), and add an empty named fpv_spawn
+at foot level where a visitor should start, facing along its +Y. Everything else is solid.
+
 LIGHT CHECK — every build renders the model the way Lights mode shows it (only its own lights)
 into last_lights.png and prints "light:" / "lights view:" lines. "LIGHTS ..." lines (exit code 4)
 MUST be fixed: TOO BRIGHT / TOO DIM (adjust energies; point/spot fall off with distance²), or
