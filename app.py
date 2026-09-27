@@ -444,6 +444,26 @@ def log(job, kind, text):
     save_jobs()
 
 
+# No message from the agent for this long = stuck. Big requests can think silently for 8+ minutes
+# (the API only sends keep-alive pings meanwhile) and tools run up to 10 min, so keep this generous.
+IDLE_LIMIT = 20 * 60
+
+
+async def watchdog(stream, job):
+    """Yield from the agent stream, but give up if it goes silent for IDLE_LIMIT seconds."""
+    it = stream.__aiter__()
+    while True:
+        try:
+            msg = await asyncio.wait_for(it.__anext__(), IDLE_LIMIT)
+        except StopAsyncIteration:
+            return
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"the agent stopped responding for {IDLE_LIMIT // 60} minutes "
+                               "(stalled API request); send the message again to retry")
+        job["last_event"] = time.time()
+        yield msg
+
+
 async def run_job(job):
     c = convs.get(job["conv"])
     if not c or job.get("stop"):
@@ -463,6 +483,7 @@ async def run_job(job):
         tools=["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
         permission_mode="default", can_use_tool=make_guard(job), resume=resume,
         mcp_servers={}, strict_mcp_config=True, env={"ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
+        effort=os.environ.get("STUDIO_EFFORT") or None,  # e.g. "medium" for faster, shorter thinking
         max_turns=60, model=os.environ.get("STUDIO_MODEL") or None,
         max_buffer_size=64 * 1024 * 1024,
     )
@@ -470,7 +491,7 @@ async def run_job(job):
         async with ClaudeSDKClient(options=opts) as client:
             running[job["id"]] = client
             await client.query(job_prompt(job, resumed=bool(resume)))
-            async for msg in client.receive_response():
+            async for msg in watchdog(client.receive_response(), job):
                 if isinstance(msg, AssistantMessage):
                     for b in msg.content:
                         if isinstance(b, TextBlock) and b.text.strip():

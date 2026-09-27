@@ -313,7 +313,8 @@ function renderChat(){
     if(steps.length||live){
       const t=document.createElement('div'); t.className='think'+(openThink.has(j.id)?' open':'');
       const dur=j.started?Math.round(((j.finished||Date.now()/1000)-j.started)):0;
-      const lastStep=steps.length?stepLabel(steps[steps.length-1]):'Starting…';
+      const wait=j.started?Math.round(Date.now()/1000-j.started):0;
+      const lastStep=steps.length?stepLabel(steps[steps.length-1]):(wait>20?`Thinking… ${wait<120?wait+'s':Math.floor(wait/60)+'m'}${wait>180?' — big requests can take several minutes':''}`:'Thinking…');
       const label=j.status==='queued'?'Waiting for another job…':live?`<span class="live">${esc(lastStep)}</span>`:`Worked for ${dur<60?dur+'s':Math.floor(dur/60)+'m '+dur%60+'s'}`;
       t.innerHTML=`<button>${live?'<span class="spin"></span>':CHEV}${label}</button><div class="steps">${steps.map(l=>
         `<div class="step ${l.kind==='tool'?'tool':l.kind==='deny'?'deny':l.kind==='text'?'txt':''}">${esc(stepLabel(l))}</div>`).join('')}</div>`;
