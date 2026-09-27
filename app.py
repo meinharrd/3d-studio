@@ -311,6 +311,12 @@ candles, neon, engines), add real Blender lights (POINT / SPOT / SUN — AREA li
 at the source and give the glowing parts an emissive material (Emission Color + Strength 3-15).
 Typical energies: candle 1-5 W, lamp bulb 20-60 W, spot 50-200 W, sun 2-5. Don't add generic
 studio/fill lights — the other view modes provide studio lighting.
+LIGHT CHECK — every build renders the model the way Lights mode shows it (only its own lights)
+into last_lights.png and prints "light:" / "lights view:" lines. "LIGHTS ..." lines (exit code 4)
+MUST be fixed: TOO BRIGHT / TOO DIM (adjust energies; point/spot fall off with distance²), or
+INSIDE MESH (a light placed inside geometry — blocked in Blender, leaks in the viewer; move it out,
+e.g. under the shade or in front of the bulb, and keep shadow_soft_size small). For models with
+lights, Read last_lights.png and judge it like the thumbnail.
 Don't use `Material.use_nodes` (deprecated; new materials already have "Principled BSDF").
 Keep a sensible real-world scale in metres, resting on z=0. Use Principled BSDF materials.
 

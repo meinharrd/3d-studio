@@ -9,7 +9,7 @@ name=$1; title=${2:-}; desc=${3:-}
 [[ -f $SRC/models/$name.py ]] || { echo "missing $SRC/models/$name.py"; exit 2; }
 blender -b --factory-startup -P "$PIPE/runner.py" -- "$SRC/models/$name.py" "$OUT" "$name" > "$SRC/last_build.log" 2>&1 \
   || { tail -30 "$SRC/last_build.log"; exit 1; }
-grep -E "^(Error|Traceback)" "$SRC/last_build.log" && { tail -30 "$SRC/last_build.log"; exit 1; }
+grep -aE "^(Error|Traceback)" "$SRC/last_build.log" && { tail -30 "$SRC/last_build.log"; exit 1; }
 python3 - "$OUT" "$name" "$title" "$desc" <<'PY'
 import json, sys, os, time, fcntl
 out, name, title, desc = sys.argv[1:]
@@ -27,8 +27,15 @@ json.dump(items, open(mf + ".tmp", "w"), indent=1)
 os.replace(mf + ".tmp", mf)
 PY
 chmod o+r "$OUT"/*
-if grep -q "^Z-FIGHTING" "$SRC/last_build.log"; then
-  grep "^Z-FIGHTING" "$SRC/last_build.log"
+grep -aE "^(light:|lights view:)" "$SRC/last_build.log" || true
+if grep -aq "^LIGHTS " "$SRC/last_build.log"; then
+  grep -a "^LIGHTS " "$SRC/last_build.log"
+  echo "BUILT WITH BAD LIGHTING (published, but must be fixed). Look at $SRC/last_lights.png"
+  echo "(the model as the gallery's Lights mode shows it), adjust, rebuild."
+  exit 4
+fi
+if grep -aq "^Z-FIGHTING" "$SRC/last_build.log"; then
+  grep -a "^Z-FIGHTING" "$SRC/last_build.log"
   echo "BUILT WITH Z-FIGHTING (published, but must be fixed): separate coplanar surfaces by a real gap,"
   echo "sink contact faces into the surface below, or delete hidden faces, then rebuild."
   exit 3

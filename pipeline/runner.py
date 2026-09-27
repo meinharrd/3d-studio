@@ -33,6 +33,12 @@ cam.location = center + d * radius * 3.0
 cam.rotation_euler = (center - cam.location).to_track_quat("-Z", "Y").to_euler()
 cam.data.lens = 50
 scene.camera = cam
+
+import lightcheck  # noqa: E402 — render with only the model's own lights, before helper lights exist
+preview = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(script))), "last_lights.png")
+for p in lightcheck.check(center, radius, preview):
+    print("LIGHTS " + p)
+
 for loc, e in [((1, -1, 2), 3.0), ((-2, -1, 1), 1.2), ((0, 2, 1), 1.5)]:
     L = bpy.data.objects.new("L", bpy.data.lights.new("L", "SUN"))
     L.data.energy = e

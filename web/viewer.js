@@ -8,7 +8,8 @@ import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
 import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
 
-// Blender's glTF exporter writes photometric units (W * 683 lm/W); three.js lights are unitless.
+// Blender's glTF exporter (lighting mode "SPEC") multiplies every light by 683 lm/W — sun included
+// (W/m² → lux) — while three.js lights use Blender-like radiometric values. Undo it for all types.
 const LIGHT_SCALE = 1 / 683;
 const MODES = ['wire', 'shaded', 'textured', 'lights'];
 
@@ -137,7 +138,7 @@ function load(url, posterUrl) {
     if (id !== loadId) return dispose(gltf.scene);
     if (root) { scene.remove(root); dispose(root); }
     root = gltf.scene; meshes = []; lights = []; emissive = false;
-    let shadowCasters = 0;
+    let shadowBudget = 16;
     root.traverse(o => {
       if (o.isMesh) {
         o.castShadow = o.receiveShadow = true;
@@ -146,12 +147,14 @@ function load(url, posterUrl) {
           if (m.emissive && m.emissive.getHex() && (m.emissiveIntensity ?? 1) > 0) emissive = true;
         meshes.push(o);
       } else if (o.isLight) {
-        o.intensity *= o.isDirectionalLight ? 1 : LIGHT_SCALE;
-        if (!o.isPointLight || shadowCasters === 0) {  // point shadows cost 6 passes; allow at most one
-          if (shadowCasters < 3) {
-            o.castShadow = true; shadowCasters++;
-            o.shadow.mapSize.set(1024, 1024); o.shadow.bias = -0.001; o.shadow.normalBias = 0.02;
-          }
+        o.intensity *= LIGHT_SCALE;
+        // shadows keep lights from leaking through geometry (as they would in Blender); point-light
+        // shadows cost 6 passes each, so cap them
+        const cost = o.isPointLight ? 6 : 1;
+        if (shadowBudget >= cost) {
+          o.castShadow = true; shadowBudget -= cost;
+          o.shadow.mapSize.set(o.isPointLight ? 512 : 1024, o.isPointLight ? 512 : 1024);
+          o.shadow.bias = -0.001; o.shadow.normalBias = 0.02;
         }
         lights.push(o);
       }
