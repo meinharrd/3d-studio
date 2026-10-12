@@ -114,6 +114,10 @@ a{color:var(--acc)}
 #stage.fs>:not(canvas,#poster,#walkJoy,#fsBtn){display:none!important}
 #stage.fs #fsBtn{opacity:0;pointer-events:none;transition:opacity .3s} #stage.fs.fs-ui #fsBtn{opacity:1;pointer-events:auto}
 @media (hover:hover) and (pointer:fine){#stage.fs #fsBtn{display:none}}  /* desktop: Esc / F leave fullscreen */
+#hist{position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:2;display:flex;align-items:center;gap:2px;padding:3px;font-size:13px;color:var(--mute)}
+#hist button{padding:4px 8px;border-radius:8px} #hist button:hover:not(:disabled){background:#ffffff12;color:var(--fg)} #hist button:disabled{opacity:.35;cursor:default}
+#hist .lbl{padding:0 4px;white-space:nowrap} #hist #hRestore{color:var(--acc)} #hist.old{border-color:var(--acc)}
+#stage.walking #hist{display:none}
 .float{background:#1f1e1dcc;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
 #menuBtn{position:absolute;top:12px;right:12px;z-index:2;width:38px;height:38px}
 #menu{position:absolute;top:56px;right:12px;z-index:3;min-width:190px;padding:5px;box-shadow:0 8px 30px #0006}
@@ -188,6 +192,7 @@ dialog input:focus{border-color:#6a6862}
    <button class="ico float" id="walkExit" title="Leave walk mode" hidden>✕</button>
    <div id="walkJoy" hidden><div></div></div>
    <button class="ico float" id="fsBtn" title="Fullscreen (F)"><svg class="enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><svg class="exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
+   <div id="hist" class="float" hidden><button id="hPrev" title="Previous version ([)">‹</button><span class="lbl" id="hLbl"></span><button id="hNext" title="Next version (])">›</button><button id="hRestore" hidden>Restore</button></div>
    <button class="ico float" id="menuBtn" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
    <div id="menu" class="float" hidden>
     <button id="infoBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>Info</button>
@@ -266,12 +271,46 @@ function showModel(name){
   $('view').classList.toggle('none',!m);
   if(!m){viewKey=''; window.V?.clear(); return;}
   const k=m.name+':'+m.updated; if(k===viewKey) return; viewKey=k;
+  loadVersions(m.name);
   const go=()=>window.V.load(m.glb+'?v='+m.updated,m.thumb+'?v='+m.updated); window.V?go():(window.__pendingModel=go);
   $('dl').href=m.glb; $('dl').download=m.name+'.glb'; if(!$('info').hidden) renderInfo();
   document.title=m.title+' · 3D Studio';
 }
 function currentModel(){ const h=decodeURIComponent(location.hash.slice(1)); return h.startsWith('c/')?null:h; }
 
+/* ---------- version history (one per chat round that changed the model) ---------- */
+let hist={name:null,list:[],i:-1};
+async function loadVersions(name){
+  hist={name,list:[],i:-1}; renderHist();
+  if(!user) return;
+  const list=await api('models/'+encodeURIComponent(name)+'/versions').catch(()=>[]);
+  if(hist.name!==name) return;
+  hist.list=list; hist.i=list.length-1; renderHist(); if(cur?.model===name) renderChat();  // chips show v<n>
+}
+function renderHist(){
+  const n=hist.list.length, v=hist.list[hist.i], old=hist.i<n-1;
+  $('hist').hidden=n<2; $('hist').classList.toggle('old',old);
+  $('hLbl').textContent=`Version ${hist.i+1}/${n}`; $('hist').title=v?v.prompt:'';
+  $('hPrev').disabled=hist.i<=0; $('hNext').disabled=hist.i>=n-1; $('hRestore').hidden=!old;
+}
+function showVersion(i){
+  if(i<0||i>=hist.list.length||i===hist.i) return;
+  hist.i=i; renderHist();
+  const m=modelBy(hist.name), v=hist.list[i];
+  if(i===hist.list.length-1) window.V.load(m.glb+'?v='+m.updated,m.thumb+'?v='+m.updated);
+  else window.V.load(v.glb,v.thumb);
+}
+$('hPrev').onclick=()=>showVersion(hist.i-1); $('hNext').onclick=()=>showVersion(hist.i+1);
+$('hRestore').onclick=async()=>{
+  const v=hist.list[hist.i]; if(!v||!confirm('Make this version the current model again?')) return;
+  try{ await api('models/'+encodeURIComponent(hist.name)+'/restore',{method:'POST',body:JSON.stringify({version:v.id})}); }
+  catch(e){ return alert(e.message); }
+  await loadModels(); if(cur) await openConv(cur.id,{scroll:true}); else showModel(hist.name);
+};
+document.addEventListener('keydown',e=>{
+  if(e.target.closest('textarea,input')||$('hist').hidden) return;
+  if(e.key==='[') showVersion(hist.i-1); else if(e.key===']') showVersion(hist.i+1);
+});
 /* ---------- viewer menu / info ---------- */
 function shownModel(){ return modelBy(viewKey.split(':')[0]); }
 $('menuBtn').onclick=e=>{ e.stopPropagation(); $('info').hidden=true; $('menu').hidden=!$('menu').hidden; };
@@ -354,7 +393,10 @@ function renderChat(){
     if(j.status==='stopped') a.insertAdjacentHTML('beforeend',`<div class="meta">Stopped.</div>`);
     const m=j.result&&modelBy(j.result);
     if(m&&!live){const c=document.createElement('button'); c.className='chip';
-      c.innerHTML=`<img src="${esc(m.thumb)}?v=${m.updated}" alt="">${esc(m.title)} · built`; c.onclick=()=>showModel(m.name); a.append(c);}
+      const vi=j.snap&&hist.name===m.name?hist.list.findIndex(v=>v.id===j.id):-1;
+      c.innerHTML=(j.snap?`<img src="models/history/${esc(j.id)}.png" alt="">`:`<img src="${esc(m.thumb)}?v=${m.updated}" alt="">`)+
+        `${esc(m.title)} · ${j.kind==='restore'?'restored':'built'}`+(vi>=0?` · v${vi+1}`:'');
+      c.onclick=()=>{ showModel(m.name); const i=hist.list.findIndex(v=>v.id===j.id); if(i>=0) showVersion(i); }; a.append(c);}
     if(!live&&j.cost!=null) a.insertAdjacentHTML('beforeend',`<div class="meta">$${j.cost.toFixed(2)}</div>`);
     col.append(a);
     earlierLive||=live;

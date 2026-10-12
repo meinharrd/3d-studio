@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import shlex
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -260,6 +261,10 @@ async def delete_conv(cid: str, req: Request):
         subprocess.run([str(SRC / "delete.sh"), c["model"]], check=True)
         git_commit(f"Delete {c['model']}")
     convs.pop(cid)
+    for j in jobs:
+        if j.get("conv") == cid:
+            for ext in ("glb", "png"):
+                (HIST / f"{j['id']}.{ext}").unlink(missing_ok=True)
     jobs[:] = [j for j in jobs if j.get("conv") != cid]
     save_convs(); save_jobs()
     return {}
@@ -298,7 +303,8 @@ async def edit_model(name: str, body: ModelMeta, req: Request):
     if m["name"] != name:
         for c in convs.values():
             if c["model"] == name:
-                c["model"], c["renamed_from"] = m["name"], name
+                c["model"] = m["name"]
+                c.setdefault("notes", []).append(f"It was renamed from `{name}`; the script is now models/{m['name']}.py.")
         for j in jobs:
             for k in ("target", "result"):
                 if j.get(k) == name:
@@ -320,6 +326,94 @@ def rename_model(old, new):
     for ext in ("glb", "png"):
         if (WEB / f"{old}.{ext}").exists():
             (WEB / f"{old}.{ext}").rename(WEB / f"{new}.{ext}")
+
+
+# ---------- version history ----------
+# Every chat round that changes a model keeps a copy of its GLB + thumbnail (web/models/history/<job id>.*)
+# and the content commit of its script, so the owner can step through rounds and restore one.
+HIST = WEB / "history"
+
+
+def snapshot(job, name):
+    HIST.mkdir(exist_ok=True)
+    for ext in ("glb", "png"):
+        if (WEB / f"{name}.{ext}").exists():
+            shutil.copyfile(WEB / f"{name}.{ext}", HIST / f"{job['id']}.{ext}")
+            os.chmod(HIST / f"{job['id']}.{ext}", 0o644)
+    script = f"models/{name}.py"
+    r = subprocess.run(["git", "log", "-1", "--format=%H", "--", script], cwd=SRC, capture_output=True, text=True)
+    job["snap"] = {"commit": r.stdout.strip(), "script": script}
+    save_jobs()
+
+
+def ensure_snapshot(name):
+    last = next((j for j in reversed(jobs) if j.get("result") == name and j["status"] == "done"), None)
+    if last and not last.get("snap"):
+        snapshot(last, name)
+
+
+def versions(name):
+    return [j for j in jobs if j.get("result") == name and j.get("snap")]
+
+
+@app.get("/3d/api/models/{name}/versions")
+async def list_versions(name: str, req: Request):
+    require_user(req)
+    ensure_snapshot(name)
+    return [{"id": j["id"], "prompt": j["prompt"], "time": j.get("finished") or j["created"],
+             "glb": f"models/history/{j['id']}.glb", "thumb": f"models/history/{j['id']}.png"}
+            for j in versions(name)]
+
+
+class RestoreIn(BaseModel):
+    version: str
+
+
+@app.post("/3d/api/models/{name}/restore")
+async def restore(name: str, body: RestoreIn, req: Request):
+    user = require_user(req)
+    v = next((j for j in versions(name) if j["id"] == body.version), None)
+    if not v:
+        raise HTTPException(404, "no such version")
+    c = next((c for c in convs.values() if c["model"] == name), None)
+    if any(j["status"] in ("queued", "running") and j.get("target") in (name, None) for j in jobs):
+        raise HTTPException(409, "wait until the running chat is done")
+    src = subprocess.run(["git", "show", f"{v['snap']['commit']}:{v['snap']['script']}"], cwd=SRC,
+                         capture_output=True, text=True)
+    if src.returncode:
+        raise HTTPException(500, "script of that version not found")
+    import fcntl
+    mf = WEB / "models.json"
+    with open(str(mf) + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        (SRC / "models" / f"{name}.py").write_text(src.stdout)
+        for ext in ("glb", "png"):
+            if (HIST / f"{v['id']}.{ext}").exists():
+                shutil.copyfile(HIST / f"{v['id']}.{ext}", WEB / f"{name}.{ext}")
+                os.chmod(WEB / f"{name}.{ext}", 0o644)
+        items = manifest()
+        for i in items:
+            if i["name"] == name:
+                i["updated"] = int(time.time())
+        tmp = mf.with_suffix(".tmp")
+        tmp.write_text(json.dumps(items, indent=1))
+        os.chmod(tmp, 0o644)
+        tmp.replace(mf)
+    git_commit(f"Restore {name} to the version of: {v['prompt'][:200]}")
+    now = time.time()
+    job = {"id": secrets.token_hex(6), "conv": c and c["id"], "user": user, "kind": "restore",
+           "prompt": f"↩ Restore the version from “{v['prompt'][:120]}”", "target": name, "status": "done",
+           "created": now, "started": now, "finished": now, "result": name, "error": None,
+           "log": [{"t": now, "kind": "text", "text": "Restored that version. It's the current model again."}]}
+    jobs.append(job)
+    snapshot(job, name)
+    if c:
+        c["updated"] = now
+        c.setdefault("notes", []).append(
+            f"The owner restored models/{name}.py to an earlier version (the one built for: {v['prompt'][:200]!r}); "
+            "re-read the script before changing it.")
+    save_jobs(); save_convs()
+    return {"ok": True}
 
 
 def git_commit(msg: str):
@@ -413,11 +507,9 @@ sentence describing what you made."""
 def job_prompt(job, resumed=False) -> str:
     if job["target"]:
         m = next((m for m in manifest() if m["name"] == job["target"]), None)
+        notes = "".join(" " + n for n in convs.get(job["conv"], {}).pop("notes", []))
         if resumed:
-            c = convs.get(job["conv"], {})
-            note = (f" It was renamed from `{c.pop('renamed_from')}`; the script is now models/{job['target']}.py"
-                    if c.get("renamed_from") else "")
-            return f"(Model `{job['target']}`.{note}) {job['prompt']}"
+            return f"(Model `{job['target']}`.{notes}) {job['prompt']}"
         title = f", current title {m['title']!r}, description {m.get('description', '')!r}" if m else ""
         return (f"This chat is about the existing model `{job['target']}` (script "
                 f"models/{job['target']}.py{title}). Keep the name and the current title/description "
@@ -512,6 +604,8 @@ async def run_job(job):
         return
     job["status"], job["started"] = "running", time.time()
     job["target"] = c["model"]
+    if c["model"]:
+        ensure_snapshot(c["model"])  # models built before history existed: keep the state we start from
     save_jobs()
     before = {m["name"]: m.get("updated") for m in manifest()}
     resume = c.get("session_id")
@@ -563,6 +657,8 @@ async def run_job(job):
         running.pop(job["id"], None)
     verb = "Change " + job["target"] if job["target"] else "Create " + (c["model"] or "?")
     git_commit(f"{verb}: {job['prompt'][:200]}" + ("" if job["status"] == "done" else f" [{job['status']}]"))
+    if job["result"]:
+        snapshot(job, job["result"])
     job["finished"] = time.time()
     c["updated"] = time.time()
     save_jobs(); save_convs()
