@@ -274,7 +274,7 @@ $('closeSb').onclick=()=>setSb(false); $('openSb').onclick=$('openSbV').onclick=
 /* ---------- viewer ---------- */
 function showModel(name){
   const m=name&&modelBy(name);
-  $('view').classList.toggle('none',!m);
+  $('view').classList.toggle('none',!m); $('vEmpty').textContent='Your model will appear here.';
   if(!m){viewKey=''; window.V?.clear(); return;}
   const k=m.name+':'+m.updated; if(k===viewKey) return; viewKey=k;
   loadVersions(m.name);
@@ -474,6 +474,11 @@ async function refreshConvs(){ if(!user) return; try{convs=await api('convs');}c
 function route(){
   let h=decodeURIComponent(location.hash.slice(1));
   const am=h&&!h.startsWith('c/')&&modelBy(h); if(am&&am.name!==h){ h=am.name; history.replaceState(null,'','#'+h); }  // renamed model
+  if(h&&!h.startsWith('c/')&&!modelBy(h)){  // private, deleted or mistyped model: homepage with a note
+    history.replaceState(null,'',location.pathname+location.search);
+    if(!user){ showModel(null); $('vEmpty').textContent='This model isn\'t available.'; renderList(); return; }
+    h='';
+  }
   if(!user){ const m=modelBy(h)||models[0]; showModel(m?.name); renderList(); return; }
   if(h.startsWith('c/')) return openConv(h.slice(2));
   const c=h&&convs.find(c=>c.model===h);
