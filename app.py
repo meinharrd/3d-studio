@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient,
@@ -284,17 +285,48 @@ async def delete_conv(cid: str, req: Request):
     return {}
 
 
-class ModelMeta(BaseModel):
-    title: str
-    description: str = ""
+# ---------- model files (Caddy routes /3d/models/* here so private models stay private) ----------
+
+def model_owner(name):
+    return next((c.get("owner", "admin") for c in convs.values() if c["model"] == name), "admin")
+
+
+def visible(m, user) -> bool:
+    return bool(m.get("public")) or bool(user and (is_admin(user) or model_owner(m["name"]) == user))
+
+
+@app.get("/3d/models/{path:path}")
+async def model_file(path: str, req: Request):
+    user = current_user(req)
+    if path == "models.json":
+        return JSONResponse([m for m in manifest() if visible(m, user)], headers={"Cache-Control": "no-store"})
+    f = (WEB / path).resolve()
+    if not f.is_relative_to(WEB.resolve()) or not f.is_file() or f.suffix not in (".glb", ".png"):
+        raise HTTPException(404)
+    if path.startswith("history/"):
+        j = next((j for j in jobs if j["id"] == f.stem), None)
+        c = j and convs.get(j.get("conv"))
+        ok = bool(user and c and can_access(c, user))
+    else:
+        m = next((m for m in manifest() if m["name"] == f.stem), None)
+        ok = bool(m and visible(m, user))
+    if not ok:
+        raise HTTPException(404)
+    return FileResponse(f, headers={"Cache-Control": "no-cache"})
+
+
+class ModelMeta(BaseModel):  # omitted fields stay as they are
+    title: str | None = None
+    description: str | None = None
     name: str | None = None  # new file name (renames script, GLB, thumbnail)
+    public: bool | None = None  # shown in the public gallery; private models only to their owner (and admins)
 
 
 @app.patch("/3d/api/models/{name}")
 async def edit_model(name: str, body: ModelMeta, req: Request):
     own_model(name, require_user(req))
-    title, desc = body.title.strip(), body.description.strip()
-    if not title or len(title) > 120 or len(desc) > 2000:
+    title, desc = (body.title or "").strip(), (body.description or "").strip()
+    if (body.title is not None and not title) or len(title) > 120 or len(desc) > 2000:
         raise HTTPException(400, "title 1-120 characters, description up to 2000")
     import fcntl
     mf = WEB / "models.json"
@@ -309,7 +341,12 @@ async def edit_model(name: str, body: ModelMeta, req: Request):
             rename_model(name, new)
             m["aliases"] = [a for a in m.get("aliases", []) + [name] if a != new]  # old links keep working
             m["name"], m["glb"], m["thumb"] = new, f"models/{new}.glb", f"models/{new}.png"
-        m["title"], m["description"] = title, desc
+        if body.title is not None:
+            m["title"] = title
+        if body.description is not None:
+            m["description"] = desc
+        if body.public is not None:
+            m["public"] = body.public
         tmp = mf.with_suffix(".tmp")
         tmp.write_text(json.dumps(items, indent=1))
         os.chmod(tmp, 0o644)
@@ -446,7 +483,8 @@ You work in {SRC}. Each model is a Blender 5.2 Python script at models/<name>.py
 (name: lowercase a-z, 0-9, dashes; you can't rename a model or copy it to a new name: if asked,
 tell the owner to use Info > Edit > "File name" in the viewer menu, which renames the script, GLB and
 link and keeps the old link working; earlier versions of every chat round are kept and can be stepped
-through and restored with the Version control in the viewer). The script only builds the model with bpy: the scene is
+through and restored with the Version control in the viewer; new models are private, visible only
+to the owner, until they click "Private" in Info to make them public). The script only builds the model with bpy: the scene is
 already empty; do NOT add cameras or export code, and don't call read_factory_settings.
 Lights: the gallery has a "Lights" view mode that shows ONLY the model's own lights (dark
 environment, bloom). When a model has light sources (lamps, lanterns, windows at night, screens,

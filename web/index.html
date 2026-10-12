@@ -338,11 +338,14 @@ function renderInfo(edit=false){
     $('eD').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)) $('eSave').click(); });
   }else{
     el.innerHTML=`<button class="ico x" title="Close">✕</button><h2></h2><p></p><div class="meta2"></div>`+
-      (user&&convs.some(c=>c.model===m.name)?`<div class="acts"><span class="sp"></span><button class="btn2 sm" id="eEdit">✎ Edit</button></div>`:'');
+      (user&&convs.some(c=>c.model===m.name)?`<div class="acts"><button class="btn2 sm" id="eVis" title="${m.public?'Shown in the public gallery. Click to make private':'Only you can see it. Click to publish'}">${m.public?'🌐 Public':'🔒 Private'}</button><span class="sp"></span><button class="btn2 sm" id="eEdit">✎ Edit</button></div>`:'');
     el.querySelector('h2').textContent=m.title;
     el.querySelector('p').textContent=m.description||(user?'No description yet.':'');
     el.querySelector('.meta2').textContent=m.name+'.glb'+(when?' · updated '+when:'');
     $('eEdit')?.addEventListener('click',()=>renderInfo(true));
+    $('eVis')?.addEventListener('click',async()=>{
+      try{ Object.assign(m,await api('models/'+encodeURIComponent(m.name),{method:'PATCH',body:JSON.stringify({public:!m.public})})); renderInfo(); }
+      catch(err){ alert(err.message); } });
   }
   el.querySelector('.x')?.addEventListener('click',()=>{ el.hidden=true; });
 }
@@ -475,7 +478,8 @@ addEventListener('hashchange',route);
 function setUser(u){
   user=u; document.body.classList.toggle('public',!u); $('newBtn').hidden=!u;
   clearInterval(listT); cur=null; viewKey='';
-  if(u){ refreshConvs().then(route); listT=setInterval(refreshConvs,10000); } else { convs=[]; route(); }
+  loadModels().then(()=>{  // private models are only listed for their owner
+    if(u){ refreshConvs().then(route); listT=setInterval(refreshConvs,10000); } else { convs=[]; route(); } });
 }
 $('loginForm').onsubmit=async e=>{
   e.preventDefault();

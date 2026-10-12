@@ -4,6 +4,9 @@ example.com {
 	handle /3d/api/* {
 		reverse_proxy 127.0.0.1:8310
 	}
+	handle /3d/models/* {  # model files go through the app, which hides private models
+		reverse_proxy 127.0.0.1:8310
+	}
 	handle {
 		root * /srv/www/example.com
 		file_server
