@@ -164,7 +164,8 @@ async def logout(req: Request, resp: Response):
 
 @app.get("/3d/api/me")
 async def me(req: Request):
-    return {"user": current_user(req)}
+    u = current_user(req)
+    return {"user": u, "admin": is_admin(u) if u else False}
 
 
 # ---------- chats ----------
@@ -179,10 +180,25 @@ def conv_view(c):
     return {**c, "model_info": m, "status": last and last["status"]}
 
 
-def get_conv(cid):
+def is_admin(user) -> bool:
+    return bool(load(USERS, {}).get(user, {}).get("admin"))
+
+
+def can_access(c, user) -> bool:  # users see their own chats and models; admins see everything
+    return c.get("owner", "admin") == user or is_admin(user)
+
+
+def get_conv(cid, user):
     c = convs.get(cid)
-    if not c:
+    if not c or not can_access(c, user):
         raise HTTPException(404, "no such chat")
+    return c
+
+
+def own_model(name, user):
+    c = next((c for c in convs.values() if c["model"] == name), None)
+    if not (c and can_access(c, user)) and not is_admin(user):
+        raise HTTPException(403, "not your model")
     return c
 
 
@@ -205,7 +221,7 @@ async def enqueue(c, user, prompt):
 
 @app.get("/3d/api/convs")
 async def list_convs(req: Request):
-    require_user(req)
+    user = require_user(req)
     names = {m["name"] for m in manifest()}
     stale = [cid for cid, c in convs.items()  # model deleted outside the UI (delete.sh) and no chat history
              if c["model"] and c["model"] not in names and not any(j.get("conv") == cid for j in jobs)]
@@ -213,13 +229,13 @@ async def list_convs(req: Request):
         convs.pop(cid)
     if stale:
         save_convs()
-    return sorted((conv_view(c) for c in convs.values()), key=lambda c: -c["updated"])
+    return sorted((conv_view(c) for c in convs.values() if can_access(c, user)), key=lambda c: -c["updated"])
 
 
 @app.post("/3d/api/convs")
 async def new_conv(body: MsgIn, req: Request):
     user = require_user(req)
-    c = {"id": secrets.token_hex(6), "model": None, "title": body.prompt.strip()[:80],
+    c = {"id": secrets.token_hex(6), "model": None, "title": body.prompt.strip()[:80], "owner": user,
          "created": time.time(), "updated": time.time(), "session_id": None}
     convs[c["id"]] = c
     await enqueue(c, user, body.prompt)
@@ -228,20 +244,19 @@ async def new_conv(body: MsgIn, req: Request):
 
 @app.get("/3d/api/convs/{cid}")
 async def read_conv(cid: str, req: Request):
-    require_user(req)
-    c = get_conv(cid)
+    c = get_conv(cid, require_user(req))
     return {**conv_view(c), "jobs": [j for j in jobs if j.get("conv") == cid]}
 
 
 @app.post("/3d/api/convs/{cid}/messages")
 async def post_message(cid: str, body: MsgIn, req: Request):
     user = require_user(req)
-    return await enqueue(get_conv(cid), user, body.prompt)
+    return await enqueue(get_conv(cid, user), user, body.prompt)
 
 
 @app.post("/3d/api/convs/{cid}/stop")
 async def stop(cid: str, req: Request):
-    require_user(req)
+    get_conv(cid, require_user(req))
     for j in jobs:
         if j.get("conv") == cid and j["status"] in ("queued", "running"):
             j["stop"] = True
@@ -253,8 +268,7 @@ async def stop(cid: str, req: Request):
 
 @app.delete("/3d/api/convs/{cid}")
 async def delete_conv(cid: str, req: Request):
-    require_user(req)
-    c = get_conv(cid)
+    c = get_conv(cid, require_user(req))
     if any(j.get("conv") == cid and j["status"] in ("queued", "running") for j in jobs):
         raise HTTPException(409, "stop the chat first")
     if c["model"] and NAME_RE.match(c["model"]):
@@ -278,7 +292,7 @@ class ModelMeta(BaseModel):
 
 @app.patch("/3d/api/models/{name}")
 async def edit_model(name: str, body: ModelMeta, req: Request):
-    require_user(req)
+    own_model(name, require_user(req))
     title, desc = body.title.strip(), body.description.strip()
     if not title or len(title) > 120 or len(desc) > 2000:
         raise HTTPException(400, "title 1-120 characters, description up to 2000")
@@ -358,7 +372,7 @@ def versions(name):
 
 @app.get("/3d/api/models/{name}/versions")
 async def list_versions(name: str, req: Request):
-    require_user(req)
+    own_model(name, require_user(req))
     ensure_snapshot(name)
     return [{"id": j["id"], "prompt": j["prompt"], "time": j.get("finished") or j["created"],
              "glb": f"models/history/{j['id']}.glb", "thumb": f"models/history/{j['id']}.png"}
@@ -372,6 +386,7 @@ class RestoreIn(BaseModel):
 @app.post("/3d/api/models/{name}/restore")
 async def restore(name: str, body: RestoreIn, req: Request):
     user = require_user(req)
+    own_model(name, user)
     v = next((j for j in versions(name) if j["id"] == body.version), None)
     if not v:
         raise HTTPException(404, "no such version")

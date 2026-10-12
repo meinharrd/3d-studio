@@ -338,7 +338,7 @@ function renderInfo(edit=false){
     $('eD').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)) $('eSave').click(); });
   }else{
     el.innerHTML=`<button class="ico x" title="Close">✕</button><h2></h2><p></p><div class="meta2"></div>`+
-      (user?`<div class="acts"><span class="sp"></span><button class="btn2 sm" id="eEdit">✎ Edit</button></div>`:'');
+      (user&&convs.some(c=>c.model===m.name)?`<div class="acts"><span class="sp"></span><button class="btn2 sm" id="eEdit">✎ Edit</button></div>`:'');
     el.querySelector('h2').textContent=m.title;
     el.querySelector('p').textContent=m.description||(user?'No description yet.':'');
     el.querySelector('.meta2').textContent=m.name+'.glb'+(when?' · updated '+when:'');
