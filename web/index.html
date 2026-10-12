@@ -324,6 +324,7 @@ function stepLabel(l){
 function renderChat(){
   const col=$('msgCol'), sc=$('msgs'), atBottom=sc.scrollHeight-sc.scrollTop-sc.clientHeight<80;
   col.replaceChildren();
+  let earlierLive=false;
   for(const j of cur.jobs){
     const u=document.createElement('div'); u.className='u'; u.innerHTML=`<div>${esc(j.prompt)}</div>`; col.append(u);
     const a=document.createElement('div'); a.className='a';
@@ -335,7 +336,7 @@ function renderChat(){
       const dur=j.started?Math.round(((j.finished||Date.now()/1000)-j.started)):0;
       const wait=j.started?Math.round(Date.now()/1000-j.started):0;
       const lastStep=steps.length?stepLabel(steps[steps.length-1]):(wait>20?`Thinking… ${wait<120?wait+'s':Math.floor(wait/60)+'m'}${wait>180?' — big requests can take several minutes':''}`:'Thinking…');
-      const label=j.status==='queued'?'Waiting for another job…':live?`<span class="live">${esc(lastStep)}</span>`:`Worked for ${dur<60?dur+'s':Math.floor(dur/60)+'m '+dur%60+'s'}`;
+      const label=j.status==='queued'?(earlierLive?'Queued, runs after the current reply':'Waiting for another job…'):live?`<span class="live">${esc(lastStep)}</span>`:`Worked for ${dur<60?dur+'s':Math.floor(dur/60)+'m '+dur%60+'s'}`;
       t.innerHTML=`<button>${live?'<span class="spin"></span>':CHEV}${label}</button><div class="steps">${steps.map(l=>
         `<div class="step ${l.kind==='tool'?'tool':l.kind==='deny'?'deny':l.kind==='text'?'txt':''}">${esc(stepLabel(l))}</div>`).join('')}</div>`;
       t.querySelector('button').onclick=()=>{t.classList.toggle('open'); t.classList.contains('open')?openThink.add(j.id):openThink.delete(j.id);};
@@ -350,12 +351,14 @@ function renderChat(){
       c.innerHTML=`<img src="${esc(m.thumb)}?v=${m.updated}" alt="">${esc(m.title)} · built`; c.onclick=()=>showModel(m.name); a.append(c);}
     if(!live&&j.cost!=null) a.insertAdjacentHTML('beforeend',`<div class="meta">$${j.cost.toFixed(2)}</div>`);
     col.append(a);
+    earlierLive||=live;
   }
   if(atBottom) sc.scrollTop=sc.scrollHeight;
 }
 function busy(){ return cur?.jobs.some(j=>j.status==='running'||j.status==='queued'); }
 function syncComposer(){
-  const b=busy(); $('send').innerHTML=b?ICON_STOP:ICON_SEND; $('send').title=b?'Stop':'Send';
+  const stop=busy()&&!$('inp').value.trim();  // while working: Stop, or queue a typed message
+  $('send').innerHTML=stop?ICON_STOP:ICON_SEND; $('send').title=stop?'Stop':busy()?'Queue message':'Send';
   $('inp').placeholder=cur?(cur.model?'Ask for a change…':'Reply…'):'Describe a model…';
 }
 async function openConv(id,{scroll=true}={}){
@@ -385,7 +388,7 @@ function newChat(){
   document.title='3D Studio'; setTimeout(()=>$('inp').focus(),0);
 }
 async function send(){
-  if(busy()){ await api(`convs/${cur.id}/stop`,{method:'POST'}).catch(()=>{}); return poll(); }
+  if(busy()&&!$('inp').value.trim()){ await api(`convs/${cur.id}/stop`,{method:'POST'}).catch(()=>{}); return poll(); }
   const text=$('inp').value.trim(); if(!text) return;
   $('send').disabled=true;
   try{
@@ -401,8 +404,8 @@ async function delConv(c){
   await loadModels(); await refreshConvs(); if(cur?.id===c.id) location.hash='';
 }
 function autosize(){ const t=$('inp'); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,240)+'px'; }
-$('inp').addEventListener('input',autosize);
-$('inp').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); if(!busy()) send(); } });
+$('inp').addEventListener('input',()=>{ autosize(); syncComposer(); });
+$('inp').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); if($('inp').value.trim()&&!$('send').disabled) send(); } });
 $('send').onclick=send;
 $('newBtn').onclick=()=>{ location.hash=''; newChat(); if(innerWidth<820) setSb(false); };
 $('sugg').innerHTML=SUGG.map(s=>`<button>${esc(s)}</button>`).join('');

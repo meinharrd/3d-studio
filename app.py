@@ -189,8 +189,9 @@ async def enqueue(c, user, prompt):
     prompt = prompt.strip()
     if not prompt or len(prompt) > 4000:
         raise HTTPException(400, "message must be 1-4000 characters")
-    if any(j.get("conv") == c["id"] and j["status"] in ("queued", "running") for j in jobs):
-        raise HTTPException(409, "this chat is still working")
+    # messages sent while the chat is working wait in the (FIFO) queue and run in order
+    if sum(j.get("conv") == c["id"] and j["status"] in ("queued", "running") for j in jobs) >= 10:
+        raise HTTPException(429, "too many queued messages in this chat")
     job = {"id": secrets.token_hex(6), "conv": c["id"], "user": user, "prompt": prompt,
            "target": c["model"], "status": "queued", "created": time.time(), "log": [],
            "result": None, "error": None}
