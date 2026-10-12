@@ -254,7 +254,7 @@ function setFullscreen(on) {
 for (const ev of ['fullscreenchange', 'webkitfullscreenchange'])
   document.addEventListener(ev, () => { if (!fsElement()) stage.classList.remove('fs'); });  // left via Esc
 document.getElementById('fsBtn').addEventListener('click', () => setFullscreen(!stage.classList.contains('fs')));
-// fullscreen shows only the model; the exit button fades in briefly on mouse move / tap
+// fullscreen shows only the model; on touch devices the exit button fades in briefly on tap (desktop: Esc / F)
 let fsUiTimer = 0;
 function pokeFsUi(e) {
   if (!stage.classList.contains('fs') || document.pointerLockElement) return;

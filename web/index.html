@@ -113,6 +113,7 @@ a{color:var(--acc)}
 #stage.fs:not(:fullscreen){position:fixed;inset:0;z-index:50}
 #stage.fs>:not(canvas,#poster,#walkJoy,#fsBtn){display:none!important}
 #stage.fs #fsBtn{opacity:0;pointer-events:none;transition:opacity .3s} #stage.fs.fs-ui #fsBtn{opacity:1;pointer-events:auto}
+@media (hover:hover) and (pointer:fine){#stage.fs #fsBtn{display:none}}  /* desktop: Esc / F leave fullscreen */
 .float{background:#1f1e1dcc;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
 #menuBtn{position:absolute;top:12px;right:12px;z-index:2;width:38px;height:38px}
 #menu{position:absolute;top:56px;right:12px;z-index:3;min-width:190px;padding:5px;box-shadow:0 8px 30px #0006}
