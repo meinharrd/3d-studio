@@ -9,6 +9,7 @@
  --acc:#d97757;--acc2:#c6613f;--bad:#ef8a80;--ok:#8fc08a;--sb:268px;--view:46%;
  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif}
 *{box-sizing:border-box} [hidden]{display:none!important} html,body{height:100%;margin:0}
+@supports (height:100dvh){html,body{height:100dvh}}  /* mobile: fit the visible area between the browser bars */
 body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans);overflow:hidden}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
 a{color:var(--acc)}
@@ -143,7 +144,7 @@ a{color:var(--acc)}
 #view.none #stage{display:none} #view.none #vEmpty{display:grid}
 body.public #chat,body.public #handle{display:none} body.public #view{flex:1;width:auto}
 body.public #openSbV{display:grid}
-#openSbV{display:none;position:absolute;margin:10px}
+#openSbV{display:none;position:absolute;margin:12px;z-index:3;width:38px;height:38px;background:#1f1e1dcc;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
 body.public #app:not(.sb-closed) #openSbV{display:none}
 
 /* dialog */
