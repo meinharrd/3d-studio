@@ -245,6 +245,7 @@ addEventListener('keydown', e => {
 const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
 function setFullscreen(on) {
   stage.classList.toggle('fs', on);
+  stage.classList.remove('fs-ui'); if (on) pokeFsUi();
   if (on) {
     const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
     try { req?.call(stage)?.catch?.(() => {}); } catch {}
@@ -253,6 +254,16 @@ function setFullscreen(on) {
 for (const ev of ['fullscreenchange', 'webkitfullscreenchange'])
   document.addEventListener(ev, () => { if (!fsElement()) stage.classList.remove('fs'); });  // left via Esc
 document.getElementById('fsBtn').addEventListener('click', () => setFullscreen(!stage.classList.contains('fs')));
+// fullscreen shows only the model; the exit button fades in briefly on mouse move / tap
+let fsUiTimer = 0;
+function pokeFsUi(e) {
+  if (!stage.classList.contains('fs') || document.pointerLockElement) return;
+  stage.classList.add('fs-ui');
+  clearTimeout(fsUiTimer);
+  if (!e?.target.closest?.('#fsBtn')) fsUiTimer = setTimeout(() => stage.classList.remove('fs-ui'), 2000);
+}
+stage.addEventListener('pointermove', pokeFsUi);
+stage.addEventListener('pointerdown', pokeFsUi);
 addEventListener('keydown', e => {
   if (e.target.closest('textarea,input') || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'f' || e.key === 'F') { if (!stage.closest('.none')) setFullscreen(!stage.classList.contains('fs')); }
