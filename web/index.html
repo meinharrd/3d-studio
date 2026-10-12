@@ -143,9 +143,24 @@ a{color:var(--acc)}
 #vEmpty{flex:1;display:none;place-items:center;color:var(--dim);text-align:center;padding:24px}
 #view.none #stage{display:none} #view.none #vEmpty{display:grid}
 body.public #chat,body.public #handle{display:none} body.public #view{flex:1;width:auto}
-body.public #openSbV{display:grid}
-#openSbV{display:none;position:absolute;margin:12px;z-index:3;width:38px;height:38px;background:#1f1e1dcc;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
-body.public #app:not(.sb-closed) #openSbV{display:none}
+#openSbV{display:none}
+/* public: explore gallery of tiles; a model opens full width with a way back */
+body.public #sb{display:none} body.public.exploring #view{display:none} body:not(.public.exploring) #explore{display:none}
+#explore{flex:1;overflow-y:auto;padding:28px clamp(16px,4vw,48px) 48px}
+#explore header{display:flex;align-items:center;gap:12px;max-width:1280px;margin:0 auto 6px}
+#explore header .brand{font-size:26px;padding:0}
+#explore .sub{max-width:1280px;margin:0 auto 24px;color:var(--mute)}
+#exNote{max-width:1280px;margin:0 auto 18px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;color:var(--mute);font-size:14px}
+#tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:18px;max-width:1280px;margin:0 auto}
+.tile{display:flex;flex-direction:column;text-align:left;background:var(--side);border:1px solid var(--line);border-radius:14px;overflow:hidden;transition:transform .15s,border-color .15s}
+.tile:hover{transform:translateY(-2px);border-color:#5a5852}
+.tile img{width:100%;aspect-ratio:1;object-fit:contain;background:radial-gradient(circle at 50% 40%,#34332f,#1b1a19 70%);padding:6%}
+.tile .tt{padding:10px 14px 12px} .tile b{display:block;font:400 17px/1.3 var(--serif)}
+.tile small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--mute);font-size:13px;line-height:1.45;margin-top:3px}
+@media (max-width:520px){#tiles{grid-template-columns:repeat(2,1fr);gap:10px} .tile small{display:none} .tile .tt{padding:8px 10px} .tile b{font-size:15px}}
+#backG{display:none;position:absolute;top:12px;left:12px;z-index:3;height:38px;padding:0 12px 0 10px;gap:6px;align-items:center;font-size:13px;color:var(--fg)}
+#backG svg{width:16px;height:16px} body.public #backG{display:flex}
+@media (max-width:520px){#backG span{display:none} #backG{padding:0 10px}}
 
 /* dialog */
 dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:16px;padding:24px;width:min(360px,92vw)}
@@ -185,6 +200,7 @@ dialog input:focus{border-color:#6a6862}
  <div id="handle"></div>
 
  <section id="view" class="none">
+  <button class="float" id="backG" title="All models"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg><span>Explore</span></button>
   <button class="ico" id="openSbV" title="Show sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
   <div id="stage"><img id="poster" alt="" hidden>
    <div id="modes">
@@ -209,6 +225,13 @@ dialog input:focus{border-color:#6a6862}
    <div id="info" class="float" hidden></div>
   </div>
   <div id="vEmpty">Your model will appear here.</div>
+ </section>
+
+ <section id="explore">
+  <header><span class="brand">3D Studio</span><button class="btn2 sm" id="exLogin">Log in</button></header>
+  <p class="sub">Models built by chatting with an AI. Open one to look around, switch views or walk through it.</p>
+  <div id="exNote" hidden>That model isn't available.</div>
+  <div id="tiles"></div>
  </section>
 </div>
 
@@ -475,20 +498,35 @@ async function refreshConvs(){ if(!user) return; try{convs=await api('convs');}c
 function route(){
   let h=decodeURIComponent(location.hash.slice(1));
   const am=h&&!h.startsWith('c/')&&modelBy(h); if(am&&am.name!==h){ h=am.name; history.replaceState(null,'','#'+h); }  // renamed model
-  if(h&&!h.startsWith('c/')&&!modelBy(h)){  // private, deleted or mistyped model: homepage with a note
-    history.replaceState(null,'',location.pathname+location.search);
-    if(!user){ showModel(null); $('vEmpty').textContent='This model isn\'t available.'; renderList(); return; }
-    h='';
+  const missing=h&&!h.startsWith('c/')&&!modelBy(h);  // private, deleted or mistyped model: homepage
+  if(missing){ history.replaceState(null,'',location.pathname+location.search); h=''; }
+  if(!user){  // public: the explore gallery, or one model full width
+    document.body.classList.toggle('exploring',!h);
+    $('exNote').hidden=!missing;
+    if(!h){ showModel(null); renderExplore(); document.title='3D Studio'; return; }
+    showModel(h); return;
   }
-  if(!user){ const m=modelBy(h)||models[0]; showModel(m?.name); renderList(); return; }
   if(h.startsWith('c/')) return openConv(h.slice(2));
   const c=h&&convs.find(c=>c.model===h);
   if(c) return cur?.id===c.id?null:openConv(c.id);
   newChat();
 }
 addEventListener('hashchange',route);
+function renderExplore(){
+  const T=$('tiles'); T.replaceChildren();
+  for(const m of models){
+    const b=document.createElement('button'); b.className='tile';
+    b.innerHTML=`<img src="${esc(m.thumb)}?v=${m.updated}" alt="" loading="lazy"><span class="tt"><b></b><small></small></span>`;
+    b.querySelector('b').textContent=m.title; b.querySelector('small').textContent=m.description||'';
+    b.onclick=()=>{ location.hash=m.name; };
+    T.append(b);
+  }
+  if(!models.length) T.innerHTML='<p class="sub">No public models yet.</p>';
+}
+$('backG').onclick=()=>{ location.hash=''; };
+$('exLogin').onclick=()=>{ $('loginErr').textContent=''; loginDlg.showModal(); $('lu').focus(); };
 function setUser(u){
-  user=u; document.body.classList.toggle('public',!u); $('newBtn').hidden=!u;
+  user=u; document.body.classList.toggle('public',!u); if(u) document.body.classList.remove('exploring'); $('newBtn').hidden=!u;
   clearInterval(listT); cur=null; viewKey='';
   loadModels().then(()=>{  // private models are only listed for their owner
     if(u){ refreshConvs().then(route); listT=setInterval(refreshConvs,10000); } else { convs=[]; route(); } });
