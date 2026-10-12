@@ -175,6 +175,8 @@ dialog input:focus{border-color:#6a6862}
  #app.sb-closed #sb{margin-left:calc(-1 * var(--sb) - 40px)}
  #view{order:-1;width:auto!important;height:42vh;min-width:0} #handle{display:none} #chat{min-width:0;flex:1;min-height:0}
  body.public #view{height:auto}
+ #view.none{display:none}  /* no empty placeholder on phones */
+ #app.sb-closed #openSb{position:fixed;top:12px;left:12px;z-index:5;width:38px;height:38px;background:#1f1e1dcc;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
 }
 </style></head><body>
 <div id="app">
