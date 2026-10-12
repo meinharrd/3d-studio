@@ -125,7 +125,8 @@ a{color:var(--acc)}
 #info .acts{display:flex;gap:8px;margin-top:12px;align-items:center} #info .acts .sp{flex:1}
 #info .meta2{color:var(--dim);font-size:12px;margin-top:10px}
 #info input,#info textarea{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;outline:0}
-#info input{font:400 17px var(--serif);margin-bottom:8px} #info textarea{min-height:110px;resize:vertical;font-size:14px}
+#info input{font:400 17px var(--serif);margin-bottom:8px} #info .fn{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:12px;margin-bottom:8px}
+#info .fn input{margin:0;padding:5px 8px;font:13px ui-monospace,monospace;flex:1} #info textarea{min-height:110px;resize:vertical;font-size:14px}
 #info input:focus,#info textarea:focus{border-color:#6a6862}
 .btn.sm{padding:6px 12px;font-size:13px} .btn2.sm{padding:6px 8px;font-size:13px}
 #vEmpty{flex:1;display:none;place-items:center;color:var(--dim);text-align:center;padding:24px}
@@ -232,7 +233,7 @@ async function api(path,opts={}){
   return b;
 }
 async function loadModels(){ models=await fetch('models/models.json?'+Date.now()).then(r=>r.ok?r.json():[]).catch(()=>[]); }
-const modelBy=n=>models.find(m=>m.name===n);
+const modelBy=n=>models.find(m=>m.name===n)||models.find(m=>m.aliases?.includes(n));  // aliases: names before a rename
 
 /* ---------- sidebar ---------- */
 function renderList(){
@@ -282,13 +283,17 @@ function renderInfo(edit=false){
   const m=shownModel(), el=$('info'); if(!m){ el.hidden=true; return; }
   const when=m.updated?new Date(m.updated*1000).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'';
   if(edit){
-    el.innerHTML=`<input id="eT" maxlength="120"><textarea id="eD" maxlength="2000" placeholder="Description"></textarea>
+    el.innerHTML=`<input id="eT" maxlength="120"><label class="fn">File name<input id="eN" maxlength="64" spellcheck="false" autocapitalize="off"></label><textarea id="eD" maxlength="2000" placeholder="Description"></textarea>
       <div class="acts"><span class="err" id="eErr"></span><span class="sp"></span><button class="btn2 sm" id="eCancel">Cancel</button><button class="btn sm" id="eSave">Save</button></div>`;
-    $('eT').value=m.title; $('eD').value=m.description||''; $('eD').focus();
+    $('eT').value=m.title; $('eN').value=m.name; $('eD').value=m.description||''; $('eD').focus();
+    $('eN').addEventListener('input',e=>{ e.target.value=e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g,'-'); });
     $('eCancel').onclick=()=>renderInfo();
     $('eSave').onclick=async()=>{
-      try{ const r=await api('models/'+encodeURIComponent(m.name),{method:'PATCH',body:JSON.stringify({title:$('eT').value,description:$('eD').value})});
-           Object.assign(m,r); renderInfo(); renderList(); if(cur?.model===m.name) $('chatTitle').textContent=m.title; }
+      try{ const r=await api('models/'+encodeURIComponent(m.name),{method:'PATCH',body:JSON.stringify({title:$('eT').value,description:$('eD').value,name:$('eN').value.replace(/^-+|-+$/g,'')})});
+           const old=m.name; Object.assign(m,r);
+           if(r.name!==old){ if(cur?.model===old) cur.model=r.name; await refreshConvs();
+             if(decodeURIComponent(location.hash.slice(1))===old) history.replaceState(null,'','#'+r.name); showModel(r.name); }
+           renderInfo(); renderList(); if(cur?.model===m.name) $('chatTitle').textContent=m.title; }
       catch(err){ $('eErr').textContent=err.message; }
     };
     $('eD').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)) $('eSave').click(); });
@@ -297,7 +302,7 @@ function renderInfo(edit=false){
       (user?`<div class="acts"><span class="sp"></span><button class="btn2 sm" id="eEdit">✎ Edit</button></div>`:'');
     el.querySelector('h2').textContent=m.title;
     el.querySelector('p').textContent=m.description||(user?'No description yet.':'');
-    el.querySelector('.meta2').textContent=when?'Updated '+when:'';
+    el.querySelector('.meta2').textContent=m.name+'.glb'+(when?' · updated '+when:'');
     $('eEdit')?.addEventListener('click',()=>renderInfo(true));
   }
   el.querySelector('.x')?.addEventListener('click',()=>{ el.hidden=true; });
@@ -416,7 +421,8 @@ async function refreshConvs(){ if(!user) return; try{convs=await api('convs');}c
 
 /* ---------- routing / auth ---------- */
 function route(){
-  const h=decodeURIComponent(location.hash.slice(1));
+  let h=decodeURIComponent(location.hash.slice(1));
+  const am=h&&!h.startsWith('c/')&&modelBy(h); if(am&&am.name!==h){ h=am.name; history.replaceState(null,'','#'+h); }  // renamed model
   if(!user){ const m=modelBy(h)||models[0]; showModel(m?.name); renderList(); return; }
   if(h.startsWith('c/')) return openConv(h.slice(2));
   const c=h&&convs.find(c=>c.model===h);

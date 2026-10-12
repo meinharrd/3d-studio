@@ -268,6 +268,7 @@ async def delete_conv(cid: str, req: Request):
 class ModelMeta(BaseModel):
     title: str
     description: str = ""
+    name: str | None = None  # new file name (renames script, GLB, thumbnail)
 
 
 @app.patch("/3d/api/models/{name}")
@@ -284,12 +285,41 @@ async def edit_model(name: str, body: ModelMeta, req: Request):
         m = next((i for i in items if i["name"] == name), None)
         if not m:
             raise HTTPException(404, "no such model")
+        new = (body.name or name).strip()
+        if new != name:
+            rename_model(name, new)
+            m["aliases"] = [a for a in m.get("aliases", []) + [name] if a != new]  # old links keep working
+            m["name"], m["glb"], m["thumb"] = new, f"models/{new}.glb", f"models/{new}.png"
         m["title"], m["description"] = title, desc
         tmp = mf.with_suffix(".tmp")
         tmp.write_text(json.dumps(items, indent=1))
         os.chmod(tmp, 0o644)
         tmp.replace(mf)
+    if m["name"] != name:
+        for c in convs.values():
+            if c["model"] == name:
+                c["model"], c["renamed_from"] = m["name"], name
+        for j in jobs:
+            for k in ("target", "result"):
+                if j.get(k) == name:
+                    j[k] = m["name"]
+        save_convs(); save_jobs()
+        git_commit(f"Rename {name} to {m['name']}")
     return m
+
+
+def rename_model(old, new):
+    if not NAME_RE.match(new):
+        raise HTTPException(400, "file name: lowercase a-z, 0-9 and dashes")
+    if any(i["name"] == new for i in manifest()) or (SRC / "models" / f"{new}.py").exists():
+        raise HTTPException(409, f"{new} is already taken")
+    if any(j["status"] in ("queued", "running") and (j.get("target") in (old, None)) for j in jobs):
+        raise HTTPException(409, "wait until the running chat is done")  # targetless jobs may claim names
+    if (SRC / "models" / f"{old}.py").exists():
+        (SRC / "models" / f"{old}.py").rename(SRC / "models" / f"{new}.py")
+    for ext in ("glb", "png"):
+        if (WEB / f"{old}.{ext}").exists():
+            (WEB / f"{old}.{ext}").rename(WEB / f"{new}.{ext}")
 
 
 def git_commit(msg: str):
@@ -384,7 +414,10 @@ def job_prompt(job, resumed=False) -> str:
     if job["target"]:
         m = next((m for m in manifest() if m["name"] == job["target"]), None)
         if resumed:
-            return f"(Model `{job['target']}`.) {job['prompt']}"
+            c = convs.get(job["conv"], {})
+            note = (f" It was renamed from `{c.pop('renamed_from')}`; the script is now models/{job['target']}.py"
+                    if c.get("renamed_from") else "")
+            return f"(Model `{job['target']}`.{note}) {job['prompt']}"
         title = f", current title {m['title']!r}, description {m.get('description', '')!r}" if m else ""
         return (f"This chat is about the existing model `{job['target']}` (script "
                 f"models/{job['target']}.py{title}). Keep the name and the current title/description "

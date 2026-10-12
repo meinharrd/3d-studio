@@ -22,7 +22,7 @@ desc = desc or old.get("description", "")
 items = [i for i in items if i["name"] != name]
 items.insert(0, {"name": name, "title": title, "description": desc,
                  "glb": f"models/{name}.glb", "thumb": f"models/{name}.png",
-                 "updated": int(time.time())})
+                 "updated": int(time.time()), **({"aliases": old["aliases"]} if old.get("aliases") else {})})
 json.dump(items, open(mf + ".tmp", "w"), indent=1)
 os.replace(mf + ".tmp", mf)
 PY
