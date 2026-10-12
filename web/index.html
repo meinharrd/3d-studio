@@ -108,6 +108,9 @@ a{color:var(--acc)}
 #walkJoy div{position:absolute;left:30px;top:30px;width:40px;height:40px;border-radius:50%;background:#ffffff50}
 #modes #walkBtn.on{background:var(--acc);color:#fff}
 @media (max-width:520px){#modes button span{display:none}}
+#fsBtn{position:absolute;bottom:12px;right:12px;z-index:2;width:38px;height:38px}
+#fsBtn .exit,#stage.fs #fsBtn .enter{display:none} #stage.fs #fsBtn .exit{display:block}
+#stage.fs:not(:fullscreen){position:fixed;inset:0;z-index:50}
 .float{background:#1f1e1dcc;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px}
 #menuBtn{position:absolute;top:12px;right:12px;z-index:2;width:38px;height:38px}
 #menu{position:absolute;top:56px;right:12px;z-index:3;min-width:190px;padding:5px;box-shadow:0 8px 30px #0006}
@@ -180,6 +183,7 @@ dialog input:focus{border-color:#6a6862}
    <div id="walkHint" hidden></div>
    <button class="ico float" id="walkExit" title="Leave walk mode" hidden>✕</button>
    <div id="walkJoy" hidden><div></div></div>
+   <button class="ico float" id="fsBtn" title="Fullscreen (F)"><svg class="enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><svg class="exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
    <button class="ico float" id="menuBtn" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
    <div id="menu" class="float" hidden>
     <button id="infoBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>Info</button>

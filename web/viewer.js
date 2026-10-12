@@ -241,6 +241,24 @@ addEventListener('keydown', e => {
   if (i >= 0) setMode(MODES[i]);
 });
 
+// fullscreen: the Fullscreen API where available; otherwise (iPhone Safari) the stage just covers the page
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+function setFullscreen(on) {
+  stage.classList.toggle('fs', on);
+  if (on) {
+    const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
+    try { req?.call(stage)?.catch?.(() => {}); } catch {}
+  } else if (fsElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+}
+for (const ev of ['fullscreenchange', 'webkitfullscreenchange'])
+  document.addEventListener(ev, () => { if (!fsElement()) stage.classList.remove('fs'); });  // left via Esc
+document.getElementById('fsBtn').addEventListener('click', () => setFullscreen(!stage.classList.contains('fs')));
+addEventListener('keydown', e => {
+  if (e.target.closest('textarea,input') || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'f' || e.key === 'F') { if (!stage.closest('.none')) setFullscreen(!stage.classList.contains('fs')); }
+  else if (e.key === 'Escape' && stage.classList.contains('fs') && !fsElement() && !Walk.isActive()) setFullscreen(false);
+});
+
 Walk.init({camera, controls, dom: renderer.domElement, stage});
 resize(); applyMode();
 document.getElementById('animBtn')?.addEventListener('click', () => setPaused(!paused));
